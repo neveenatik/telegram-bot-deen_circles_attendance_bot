@@ -1,0 +1,15 @@
+{
+  "functions": {
+    "api/telegram.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/api/telegram",
+      "permanent": false
+    }
+  ]
+}

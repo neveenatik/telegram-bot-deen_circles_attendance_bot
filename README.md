@@ -2,10 +2,13 @@
 
 بوت تيليغرام بالعربية لتسجيل الحضور وتتبع الغيابات.
 
+يدعم العمل محلياً باستخدام ملفات JSON، ويدعم النشر على Vercel مع Supabase في الإنتاج.
+
 ## المتطلبات
 
 - Node.js 18+
 - حساب بوت على Telegram عبر [@BotFather](https://t.me/BotFather)
+- حساب Supabase إذا كنت ستنشر على Vercel
 - يجب إضافة البوت إلى مجموعة Telegram واستخدام صلاحيات المشرف المدمجة في Telegram للتحكم بالأوامر الإدارية.
 
 ## الإعداد
@@ -20,8 +23,11 @@ npm install
 # 3. أنشئ ملف .env من القالب
 cp .env.example .env
 
-# 4. عدّل .env وأضف توكن البوت فقط
-#    BOT_TOKEN=   ← من @BotFather
+# 4. عدّل .env وأضف القيم المطلوبة
+#    BOT_TOKEN=                 ← من @BotFather
+#    SUPABASE_URL=              ← Project URL من Supabase
+#    SUPABASE_SERVICE_ROLE_KEY= ← service_role secret من Supabase
+#    WEBHOOK_SECRET=            ← قيمة عشوائية اختيارية للأمان
 
 # 5. أضف البوت إلى المجموعة وامنحه صلاحية المشرف
 #    الأوامر الإدارية تعمل فقط داخل المجموعة ومن المشرفين في Telegram
@@ -29,6 +35,30 @@ cp .env.example .env
 # 6. شغّل البوت
 npm start
 ```
+
+## النشر على Vercel + Supabase
+
+إذا أردت تشغيل البوت على Vercel بدل التشغيل المحلي، اتبع الخطوات التالية:
+
+1. أنشئ مشروعاً جديداً في Supabase.
+2. نفّذ ملف [supabase.sql](supabase.sql) داخل SQL Editor لإنشاء جدول `kv`.
+3. انسخ `SUPABASE_URL` من الصفحة الرئيسية للمشروع في Supabase.
+4. انسخ `SUPABASE_SERVICE_ROLE_KEY` من Settings → API → Legacy anon, service_role API keys.
+5. ارفع المشروع إلى GitHub ثم اربطه مع Vercel.
+6. أضف متغيرات البيئة في Vercel:
+    - `BOT_TOKEN`
+    - `SUPABASE_URL`
+    - `SUPABASE_SERVICE_ROLE_KEY`
+    - `WEBHOOK_SECRET` إذا كنت تستخدم التحقق من webhook
+7. بعد النشر، اضبط webhook عبر:
+
+```bash
+npm run set-webhook -- https://your-project.vercel.app/api/telegram
+```
+
+أو استبدل الرابط برابط النشر الفعلي الخاص بك.
+
+ملاحظة: عند وجود `SUPABASE_URL` و `SUPABASE_SERVICE_ROLE_KEY` سيستخدم البوت Supabase تلقائياً، وإلا سيعود إلى التخزين المحلي داخل مجلد `data/`.
 
 ## الأوامر
 
@@ -56,8 +86,14 @@ npm start
 telegram-bot/
 ├── index.js              ← كود البوت الرئيسي
 ├── package.json
+├── vercel.json           ← إعدادات نشر Vercel
+├── api/
+│   └── telegram.js       ← endpoint webhook الخاص بـ Telegram
+├── scripts/
+│   └── set-webhook.js    ← ضبط webhook بعد النشر
 ├── .env                  ← (تُنشأ محلياً، غير محفوظة في git)
 ├── .env.example          ← القالب
+├── supabase.sql          ← إنشاء جدول التخزين في Supabase
 └── data/
     ├── masterList.json   ← قائمة الأعضاء المسجّلين
     ├── currentSession.json ← الجلسة النشطة حالياً
