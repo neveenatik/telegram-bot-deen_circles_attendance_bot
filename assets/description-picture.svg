@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Description Picture - مسجل حضور حلقات العلم</title>
+  <desc id="desc">Branded descriptive banner for the Islamic educational attendance app.</desc>
+
+  <rect width="1600" height="900" fill="#FFFFFF"/>
+
+  <!-- Frame -->
+  <rect x="64" y="64" width="1472" height="772" rx="28" fill="#FFFFFF" stroke="#0A192F" stroke-width="4"/>
+
+  <!-- Decorative corner accents -->
+  <rect x="64" y="64" width="180" height="14" fill="#D4AF37"/>
+  <rect x="1356" y="822" width="180" height="14" fill="#D4AF37"/>
+
+  <!-- Icon block -->
+  <g transform="translate(320 360)">
+    <path d="M-180 84 C-132 42 -74 28 -12 42 L-12 176 C-74 162 -132 174 -180 214 Z"
+          fill="none" stroke="#0A192F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12 42 C74 28 132 42 180 84 L180 214 C132 174 74 162 12 176 Z"
+          fill="none" stroke="#0A192F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="0" y1="44" x2="0" y2="176" stroke="#D4AF37" stroke-width="10" stroke-linecap="round"/>
+    <path d="M48 16 L76 44 L130 -10" fill="none" stroke="#D4AF37" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g transform="translate(116 -48)">
+      <rect x="-44" y="-44" width="88" height="88" rx="10" fill="none" stroke="#0A192F" stroke-width="8"/>
+      <rect x="-30" y="-30" width="18" height="18" fill="#0A192F"/>
+      <rect x="12" y="-30" width="18" height="18" fill="#0A192F"/>
+      <rect x="-30" y="12" width="18" height="18" fill="#0A192F"/>
+      <rect x="0" y="0" width="10" height="10" fill="#D4AF37"/>
+      <rect x="14" y="0" width="10" height="10" fill="#D4AF37"/>
+      <rect x="0" y="14" width="10" height="10" fill="#D4AF37"/>
+    </g>
+  </g>
+
+  <!-- Main title -->
+  <text x="980" y="250" text-anchor="middle"
+        font-size="74" font-weight="700"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#0A192F" direction="rtl" unicode-bidi="plaintext">مسجل حضور حلقات العلم</text>
+
+  <!-- Subtitle -->
+  <text x="980" y="320" text-anchor="middle"
+        font-size="34" font-weight="600"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#D4AF37" direction="rtl" unicode-bidi="plaintext">إدارة حضور الحلقات التعليمية بسهولة ووضوح</text>
+
+  <!-- Description lines -->
+  <text x="980" y="405" text-anchor="middle"
+        font-size="30" font-weight="500"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#0A192F" direction="rtl" unicode-bidi="plaintext">• تتبّع الحضور والاعتذار والغياب في جلسات التعليم الشرعي</text>
+
+  <text x="980" y="460" text-anchor="middle"
+        font-size="30" font-weight="500"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#0A192F" direction="rtl" unicode-bidi="plaintext">• واجهة واضحة للمشرفات مع تقارير جلسات منظّمة</text>
+
+  <text x="980" y="515" text-anchor="middle"
+        font-size="30" font-weight="500"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#0A192F" direction="rtl" unicode-bidi="plaintext">• تكامل سريع مع Telegram لتسجيل الحالة بضغطة واحدة</text>
+
+</svg>

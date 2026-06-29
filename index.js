@@ -122,6 +122,7 @@ const TEXT = {
   historyLine: (name, p, l, x, ab) =>
     `${name}\n  ✅ ${p} حاضرة | 👂 ${l} مستمعة | 🔔 ${x} معتذرة | ❌ ${ab} غياب`,
   historyEmpty: 'لا توجد جلسات مؤرشفة بعد.',
+  sessionHeader: (name) => `📚 *حلقة: ${name}*`,
 };
 const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 

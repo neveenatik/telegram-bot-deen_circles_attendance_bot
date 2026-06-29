@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Welcome Picture - مسجل حضور حلقات العلم</title>
+  <desc id="desc">Clean welcome banner for the Islamic educational attendance application.</desc>
+
+  <rect width="1600" height="900" fill="#FFFFFF"/>
+
+  <!-- Primary frame -->
+  <rect x="56" y="56" width="1488" height="788" rx="30" fill="#FFFFFF" stroke="#0A192F" stroke-width="4"/>
+
+  <!-- Accent lines -->
+  <rect x="56" y="56" width="320" height="14" fill="#D4AF37"/>
+  <rect x="1224" y="830" width="320" height="14" fill="#D4AF37"/>
+
+  <!-- Hero icon -->
+  <g transform="translate(800 290)">
+    <circle cx="0" cy="0" r="148" fill="#FFFFFF" stroke="#0A192F" stroke-width="12"/>
+
+    <!-- Open book -->
+    <path d="M-92 36 C-66 10 -36 0 -6 8 L-6 98 C-36 90 -66 98 -92 122 Z"
+          fill="none" stroke="#0A192F" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6 8 C36 0 66 10 92 36 L92 122 C66 98 36 90 6 98 Z"
+          fill="none" stroke="#0A192F" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="0" y1="10" x2="0" y2="98" stroke="#D4AF37" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Digital check -->
+    <path d="M20 -26 L48 2 L104 -54" fill="none" stroke="#D4AF37" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- QR corner motif -->
+    <g transform="translate(76 -76)">
+      <rect x="-24" y="-24" width="48" height="48" rx="6" fill="none" stroke="#0A192F" stroke-width="4"/>
+      <rect x="-16" y="-16" width="10" height="10" fill="#0A192F"/>
+      <rect x="6" y="-16" width="10" height="10" fill="#0A192F"/>
+      <rect x="-16" y="6" width="10" height="10" fill="#0A192F"/>
+      <rect x="-2" y="-2" width="6" height="6" fill="#D4AF37"/>
+    </g>
+  </g>
+
+        <!-- Main heading -->
+        <text x="800" y="560" text-anchor="middle"
+              font-size="58" font-weight="700"
+              font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+              fill="#0A192F" direction="rtl" unicode-bidi="plaintext">مرحباً بك في مسجل حضور حلقات العلم</text>
+
+  <!-- Supporting text -->
+  <text x="800" y="630" text-anchor="middle"
+        font-size="38" font-weight="600"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#D4AF37" direction="rtl" unicode-bidi="plaintext">تنظيم حضور الحلقات التعليمية بطريقة واضحة وموثوقة</text>
+
+  <text x="800" y="695" text-anchor="middle"
+        font-size="30" font-weight="500"
+        font-family="Amiri, 'Noto Naskh Arabic', 'Scheherazade New', serif"
+        fill="#0A192F" direction="rtl" unicode-bidi="plaintext">ابدأ الجلسة • سجّل الحالة • راجع التقارير</text>
+</svg>
