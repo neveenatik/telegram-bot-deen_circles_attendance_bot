@@ -1,0 +1,727 @@
+require('dotenv').config();
+const { Telegraf, Markup } = require('telegraf');
+
+// ─── Data layer (Supabase in prod, local files in dev) ────────────────────────
+const {
+  getMaster, saveMaster, getSession, saveSession, clearSession, archiveSession,
+  getSessions, getAwaiting, setAwaiting, delAwaiting,
+} = require('./storage');
+
+// ─── Guards & utils ───────────────────────────────────────────────────────────
+async function isAdmin(ctx) {
+  // Admin = Telegram group administrator or creator.
+  // Admin commands have no effect in private DMs.
+  if (ctx.chat?.type === 'private') return false;
+  try {
+    const member = await ctx.getChatMember(ctx.from.id);
+    return ['administrator', 'creator'].includes(member.status);
+  } catch {
+    return false;
+  }
+}
+const sortArabic = (arr) =>
+  [...arr].sort((a, b) => a.localeCompare(b, 'ar'));
+
+// ─── Shared Arabic text ───────────────────────────────────────────────────────
+const TEXT = {
+  adminOnly: '⛔ هذا الأمر متاح للمشرفين فقط.',
+  noSessionActive: '⚠️ لا توجد حلقة نشطة.',
+  sessionAlreadyActive: '⚠️ توجد حلقة نشطة بالفعل. أنهِها أولاً بـ /endsession',
+  memberNotFound: '⚠️ العضو غير موجود.',
+  invalidAddFormat: '⚠️ الصيغة الصحيحة:\n/addmember [معرّف المستخدم] | [الاسم]\nمثال: /addmember 123456789 | أحمد محمد',
+  invalidRenameFormat: '⚠️ مثال:\n/renamemember الاسم القديم | الاسم الجديد',
+  invalidStartFormat: '⚠️ مثال: /startsession اجتماع يونيو',
+  invalidRemoveFormat: '⚠️ مثال: /removemember أحمد محمد',
+  invalidUserId: '⚠️ معرّف المستخدم يجب أن يكون رقماً صحيحاً.',
+  registrationPrompt: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | أحمد محمد',
+  emptyInput: '⚠️ الإدخال لا يمكن أن يكون فارغاً.',
+  needRegistration: '⚠️ لم تُسجّل اسمك بعد.\nأرسل /register [اسمك] أولاً.',
+  genericError: '⚠️ حدث خطأ. يرجى المحاولة لاحقاً.',
+  sessionEnded: '_✅ الحلقة منتهية_',
+  sessionJoinPrompt: '_سجّل حضورك باستخدام الأزرار أدناه:_',
+  emptyMembers: '📋 *القائمة فارغة*\nاستخدم الزر أدناه لإضافة أعضاء.',
+  addMemberButton: '➕ إضافة عضوة جديد',
+  refreshButton: '🔄 تحديث',
+  backButton: '↩️ رجوع',
+  deleteButton: '🗑️ حذف',
+  renameButton: '✏️ تعديل الاسم',
+  noNameFallback: 'بدون اسم',
+  noSessionShort: '⚠️ لا توجد حلقة.',
+  refreshed: '✅ تم التحديث',
+  registeredSelf: (a) => `✅ تمت إضافتك وتسجيلك كـ "${a}"`,
+  membersHeader: (n) => `👥 *قائمة الأعضاء (${n}):*\n\n`,
+  manageHeader: (name) => `⚙️ *إدارة الحضور – ${name}*\n\nانقر على عضو لتعديل حالته:\n\n`,
+  memberOptionsHeader: (name) => `🔧 *إدارة العضو:*\n${name}`,
+  managePickHeader: (name, e) => `⚙️ *تعديل حالة:* ${name}\nالحالة الحالية: ${e}\n\nاختر الحالة الجديدة:`,
+  renamePrompt: (name) => `✏️ اكتب الاسم الجديد بدلاً من *${name}*:`,
+  myIdInfo: (displayName, id) => `🪪 بيانات الحساب:\n\`${displayName} - ${id}\`\n\nستقوم المشرفة بإضافتك إلى قائمة المسجلات.`,
+  registerInfo: `📢 *طريقة التسجيل:*\n\n1. اكتبي /myid داخل المجموعة التي يوجد فيها البوت.\n2. ستقوم المشرفة بإضافتك إلى قائمة المسجلات بعد ظهور معرّفك.`,
+  statusNoSession: (n) => `📊 لا توجد حلقة نشطة حالياً.\nالأعضاء المسجّلون: ${n}`,
+  statusReport: (c, total) => `📊 *حلقة: ${c.name}*\n✅ حاضرة: ${c.present}\n👂 مستمعة: ${c.listening}\n🔔 معتذرة: ${c.excused}\n⏳ لم تسجّل: ${c.pending}\n👥 الإجمالي: ${total}`,
+  memberExists: (name) => `ℹ️ *${name}* موجود بالفعل.`,
+  userIdLinked: (id) => `⚠️ المعرّف ${id} مرتبط بالفعل بعضو آخر.`,
+  memberAdded: (name, id) => `✅ تمت إضافة *${name}* (معرّف: ${id}).`,
+  memberNotInList: (name) => `⚠️ *${name}* غير موجود في القائمة.`,
+  memberDeleted: (name) => `✅ تم حذف *${name}*.`,
+  memberDeletedShort: (name) => `✅ تم حذف ${name}`,
+  oldNameNotFound: (name) => `⚠️ *${name}* غير موجود.`,
+  nameTaken: (name) => `⚠️ الاسم *${name}* مستخدم بالفعل.`,
+  memberRenamed: (oldName, newName) => `✅ تم التعديل: *${oldName}* ← *${newName}*`,
+  memberGone: (name) => `⚠️ العضو *${name}* لم يعد موجوداً.`,
+  registeredAs: (a) => `✅ تم تسجيلك كـ "${a}"`,
+  statusSet: (name, a) => `✅ ${name} ← ${a}`,
+  inlinePromptAdd: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | أحمد محمد',
+  inlineInvalidAddFormat: '⚠️ الصيغة الصحيحة:\n[معرّف تيليغرام] | [الاسم]\nمثال: 123456789 | أحمد محمد',
+  report: (session, groups) => {
+    let r = `📊 *تقرير حلقة "${session.name}":*\n\n`;
+    if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
+    if (groups.listening.length) r += `👂 *مستمعة فقط (${groups.listening.length}):*\n${groups.listening.join('\n')}\n\n`;
+    if (groups.excused.length)   r += `🔔 *معتذرة (${groups.excused.length}):*\n${groups.excused.join('\n')}\n\n`;
+    if (groups.absent.length)    r += `❌ *غياب (${groups.absent.length}):*\n${groups.absent.join('\n')}`;
+    return r;
+  },
+  help: (admin) =>
+    `مرحباً! 👋 *بوت الحضور*\n\n` +
+    `*للأعضاء:*\n` +
+    `/myid – اكتبيه داخل المجموعة لتُضافي إلى قائمة المسجلات\n` +
+    `/status – ملخص حضور الحلقة الحالية` +
+    (admin
+      ? `\n\n*للمشرف:*\n` +
+        `/members – إدارة قائمة الأعضاء (إضافة / حذف / تعديل)\n` +
+        `/registerinfo – إرسال توضيح طريقة التسجيل للأعضاء\n` +
+        `/addmember [معرّف] | [اسم] – إضافة عضو بمعرّف تيليغرام\n` +
+        `/removemember [اسم] – حذف سريع\n` +
+        `/renamemember [قديم] | [جديد] – تعديل اسم عضو\n` +
+        `/startsession [اسم الحلقة] – بدء حلقة للمسجلات فقط\n` +
+        `/startopensession [اسم الحلقة] – بدء حلقة مفتوحة لأي عضوة\n` +
+        `/endsession – إنهاء الحلقة وإغلاق تسجيل الحضور\n` +
+        `/sessionmanage – تعديل حالات الحضور بشكل شخصي\n` +
+        `/history – سجل عدد مرات الحضور والاعتذار والغياب لكل عضوة`
+      : ''),
+  attendance: {
+    present:   { e: '✅', a: 'حاضرة' },
+    listening: { e: '👂', a: 'مستمعة' },
+    excused:   { e: '🔔', a: 'معتذرة' },
+    absent:    { e: '❌', a: 'غياب بغير عذر' },
+    pending:   { e: '⏳', a: 'لم يُسجّل بعد' },
+  },
+  statusButtons: {
+    present: '✅ حاضرة',
+    listening: '👂 مستمعة',
+    excused: '🔔 معتذرة',
+  },
+  manageButtons: {
+    present: '✅ حاضرة',
+    listening: '👂 مستمعة',
+    excused: '🔔 معتذرة',
+    absent: '❌ غياب',
+    back: '↩️ رجوع',
+  },
+  historyHeader: (n) =>
+    `📊 سجل الحضور (${n} جلسة)\n📅 ${new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}\n${'━'.repeat(22)}`,
+  historyLine: (name, p, l, x, ab) =>
+    `${name}\n  ✅ ${p} حاضرة | 👂 ${l} مستمعة | 🔔 ${x} معتذرة | ❌ ${ab} غياب`,
+  historyEmpty: 'لا توجد جلسات مؤرشفة بعد.',
+};
+const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
+
+// ─── ① SESSION WIDGET ─────────────────────────────────────────────────────────
+function sessionText(session, master) {
+  const names = sortArabic(master.members.map(m => m.name));
+  let t = `${TEXT.sessionHeader(session.name)}\n${'━'.repeat(22)}\n`;
+  for (const name of names) {
+    const key = session.attendance[name] || null;
+    const { e, a } = st(key);
+    t += key ? `${e} ${name} – ${a}\n` : `${e} ${name}\n`;
+  }
+  t += `${'━'.repeat(22)}\n`;
+  t += session.active
+    ? TEXT.sessionJoinPrompt
+    : TEXT.sessionEnded;
+  return t;
+}
+
+const sessionKb = (active) =>
+  active
+    ? Markup.inlineKeyboard([[
+        Markup.button.callback(TEXT.statusButtons.present, 'a:present'),
+        Markup.button.callback(TEXT.statusButtons.listening, 'a:listening'),
+        Markup.button.callback(TEXT.statusButtons.excused, 'a:excused'),
+      ]])
+    : Markup.inlineKeyboard([]);
+
+async function refreshSessionWidget(telegram, session, master) {
+  if (!session?.messageId) return;
+  try {
+    await telegram.editMessageText(
+      session.chatId, session.messageId, undefined,
+      sessionText(session, master),
+      { parse_mode: 'Markdown', ...sessionKb(session.active) }
+    );
+  } catch (e) {
+    if (!e.message?.includes('message is not modified'))
+      console.error('refreshSessionWidget:', e.message);
+  }
+}
+
+// ─── ② MEMBERS WIDGET ────────────────────────────────────────────────────────
+function membersText(master) {
+  if (!master.members.length)
+    return TEXT.emptyMembers;
+  const sorted = sortArabic(master.members.map(m => m.name));
+  return (
+    TEXT.membersHeader(master.members.length) +
+    sorted.map((n, i) => `${i + 1}. ${n}`).join('\n')
+  );
+}
+
+function membersKb(master) {
+  const sorted = sortArabic(master.members.map(m => m.name));
+  const rows = sorted.map((name, i) => [
+    Markup.button.callback(`🔧 ${name}`, `mb:pick:${i}`),
+  ]);
+  rows.push([Markup.button.callback(TEXT.addMemberButton, 'mb:add')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function memberOptionsKb(idx) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(TEXT.renameButton, `mb:ren:${idx}`),
+      Markup.button.callback(TEXT.deleteButton, `mb:del:${idx}`),
+    ],
+    [Markup.button.callback(TEXT.backButton, 'mb:back')],
+  ]);
+}
+
+// ─── ③ SESSION MANAGE WIDGET ─────────────────────────────────────────────────
+function manageText(session, master) {
+  const names = sortArabic(master.members.map(m => m.name));
+  let t = TEXT.manageHeader(session.name);
+  for (const name of names) {
+    const { e, a } = st(session.attendance[name] || null);
+    t += `${e} ${name} – ${a}\n`;
+  }
+  return t;
+}
+
+function manageKb(session, master) {
+  const names = sortArabic(master.members.map(m => m.name));
+  const rows = names.map((name, i) => {
+    const { e } = st(session.attendance[name] || null);
+    return [Markup.button.callback(`${e} ${name}`, `sm:pick:${i}`)];
+  });
+  rows.push([Markup.button.callback(TEXT.refreshButton, 'sm:refresh')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+// ─── BOT ──────────────────────────────────────────────────────────────────────
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+bot.start(async (ctx) => ctx.replyWithMarkdown(TEXT.help(await isAdmin(ctx))));
+bot.help(async (ctx)  => ctx.replyWithMarkdown(TEXT.help(await isAdmin(ctx))));
+
+// ─── /myid ────────────────────────────────────────────────────────────────────
+bot.command('myid', (ctx) => {
+  const displayName = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || ctx.from.username || TEXT.noNameFallback;
+  ctx.reply(TEXT.myIdInfo(displayName, ctx.from.id));
+});
+
+// ─── /registerinfo ────────────────────────────────────────────────────────────
+bot.command('registerinfo', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+
+  ctx.replyWithMarkdown(TEXT.registerInfo);
+});
+
+// ─── /status ──────────────────────────────────────────────────────────────────
+bot.command('status', async (ctx) => {
+  const session = await getSession();
+  const master  = await getMaster();
+  if (!session)
+    return ctx.reply(TEXT.statusNoSession(master.members.length));
+
+  const counts = { present: 0, listening: 0, excused: 0, pending: 0 };
+  for (const m of master.members) {
+    const k = session.attendance[m.name] || 'pending';
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  ctx.replyWithMarkdown(
+    TEXT.statusReport({ name: session.name, ...counts }, master.members.length)
+  );
+});
+
+// ─── /members ─────────────────────────────────────────────────────────────────
+bot.command('members', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const master = await getMaster();
+  ctx.replyWithMarkdown(membersText(master), membersKb(master));
+});
+
+// ─── /addmember ───────────────────────────────────────────────────────────────
+bot.command('addmember', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const args  = ctx.message.text.split(' ').slice(1).join(' ');
+  const parts = args.split('|').map(s => s.trim());
+  if (parts.length !== 2 || !parts[0] || !parts[1])
+    return ctx.reply(TEXT.invalidAddFormat);
+
+  const [rawId, name] = parts;
+  if (!/^\d+$/.test(rawId))
+    return ctx.reply(TEXT.invalidUserId);
+  const userId = rawId;
+
+  const master = await getMaster();
+  if (master.members.find(m => m.name === name))
+    return ctx.reply(TEXT.memberExists(name), { parse_mode: 'Markdown' });
+  if (master.members.find(m => m.userId === userId))
+    return ctx.reply(TEXT.userIdLinked(userId));
+
+  master.members.push({ userId, name });
+  await saveMaster(master);
+
+  const session = await getSession();
+  if (session) {
+    session.attendance[name] = null;
+    await saveSession(session);
+    await refreshSessionWidget(bot.telegram, session, master);
+  }
+  ctx.reply(TEXT.memberAdded(name, userId), { parse_mode: 'Markdown' });
+});
+
+// ─── /removemember ────────────────────────────────────────────────────────────
+bot.command('removemember', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!name) return ctx.reply(TEXT.invalidRemoveFormat);
+
+  const master = await getMaster();
+  const idx = master.members.findIndex(m => m.name === name);
+  if (idx === -1)
+    return ctx.reply(TEXT.memberNotInList(name), { parse_mode: 'Markdown' });
+
+  master.members.splice(idx, 1);
+  await saveMaster(master);
+
+  const session = await getSession();
+  if (session) {
+    delete session.attendance[name];
+    await saveSession(session);
+    await refreshSessionWidget(bot.telegram, session, master);
+  }
+  ctx.reply(TEXT.memberDeleted(name), { parse_mode: 'Markdown' });
+});
+
+// ─── /renamemember ────────────────────────────────────────────────────────────
+bot.command('renamemember', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const args  = ctx.message.text.split(' ').slice(1).join(' ');
+  const parts = args.split('|').map(s => s.trim());
+  if (parts.length !== 2 || !parts[0] || !parts[1])
+    return ctx.reply(TEXT.invalidRenameFormat);
+
+  const [oldName, newName] = parts;
+  const master = await getMaster();
+
+  const entry = master.members.find(m => m.name === oldName);
+  if (!entry)
+    return ctx.reply(TEXT.oldNameNotFound(oldName), { parse_mode: 'Markdown' });
+  if (master.members.find(m => m.name === newName))
+    return ctx.reply(TEXT.nameTaken(newName), { parse_mode: 'Markdown' });
+
+  entry.name = newName;
+  await saveMaster(master);
+
+  const session = await getSession();
+  if (session && oldName in session.attendance) {
+    session.attendance[newName] = session.attendance[oldName];
+    delete session.attendance[oldName];
+    await saveSession(session);
+    await refreshSessionWidget(bot.telegram, session, master);
+  }
+  ctx.reply(TEXT.memberRenamed(oldName, newName), { parse_mode: 'Markdown' });
+});
+
+// ─── /startsession & /startopensession ───────────────────────────────────────
+async function startSession(ctx, openRegistration) {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  if (await getSession())
+    return ctx.reply(TEXT.sessionAlreadyActive);
+
+  const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!name) return ctx.reply(TEXT.invalidStartFormat);
+
+  const master = await getMaster();
+  const attendance = {};
+  for (const m of master.members) attendance[m.name] = null;
+
+  const session = {
+    name,
+    startedAt: new Date().toISOString(),
+    startedBy: ctx.from.id,
+    chatId:    ctx.chat.id,
+    messageId: null,
+    active:    true,
+    openRegistration,
+    attendance,
+  };
+
+  const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true));
+  session.messageId = sent.message_id;
+  await saveSession(session);
+
+  try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
+}
+
+bot.command('startsession',     (ctx) => startSession(ctx, false)); // registered only
+bot.command('startopensession', (ctx) => startSession(ctx, true));  // any member
+
+// ─── /endsession ──────────────────────────────────────────────────────────────
+bot.command('endsession', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const session = await getSession();
+  if (!session) return ctx.reply(TEXT.noSessionActive);
+
+  const master = await getMaster();
+
+  // Everyone who never responded becomes absent
+  for (const m of master.members) {
+    if (!session.attendance[m.name]) session.attendance[m.name] = 'absent';
+  }
+  session.active  = false;
+  session.endedAt = new Date().toISOString();
+  session.endedBy = ctx.from.id;
+
+  await refreshSessionWidget(bot.telegram, session, master);
+
+  try { await ctx.unpinChatMessage(session.messageId); } catch (_) {}
+
+  await archiveSession(session);
+  await clearSession();
+
+  const names  = sortArabic(master.members.map(m => m.name));
+  const groups = { present: [], listening: [], excused: [], absent: [] };
+  for (const n of names) {
+    const k = session.attendance[n] || 'absent';
+    (groups[k] || groups.absent).push(n);
+  }
+
+  ctx.replyWithMarkdown(TEXT.report(session, groups));
+});
+
+// ─── /sessionmanage ───────────────────────────────────────────────────────────
+bot.command('sessionmanage', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const session = await getSession();
+  if (!session) return ctx.reply(TEXT.noSessionActive);
+  const master = await getMaster();
+  ctx.replyWithMarkdown(manageText(session, master), manageKb(session, master));
+});
+
+bot.command('history', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const sessions = await getSessions();
+  if (!sessions.length) return ctx.reply(TEXT.historyEmpty);
+  const master  = await getMaster();
+  const tally   = {};
+  for (const name of master.members.map(m => m.name)) {
+    tally[name] = { present: 0, listening: 0, excused: 0, absent: 0 };
+  }
+  for (const s of sessions) {
+    for (const [name, key] of Object.entries(s.attendance || {})) {
+      if (tally[name] && key in tally[name]) tally[name][key]++;
+    }
+  }
+  const lines = sortArabic(Object.keys(tally)).map((name) => {
+    const t = tally[name];
+    return TEXT.historyLine(name, t.present, t.listening, t.excused, t.absent);
+  });
+  ctx.reply(`${TEXT.historyHeader(sessions.length)}\n${lines.join('\n')}`);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALLBACK HANDLERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─── Members widget: pick a member ────────────────────────────────────────────
+bot.action(/^mb:pick:(\d+)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const master = await getMaster();
+  const sorted = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = sorted[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  await ctx.editMessageText(
+    TEXT.memberOptionsHeader(name),
+    { parse_mode: 'Markdown', ...memberOptionsKb(i) }
+  );
+  ctx.answerCbQuery();
+});
+
+// ─── Members widget: delete member ────────────────────────────────────────────
+bot.action(/^mb:del:(\d+)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const master = await getMaster();
+  const sorted = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = sorted[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  master.members.splice(master.members.findIndex(m => m.name === name), 1);
+  await saveMaster(master);
+
+  const session = await getSession();
+  if (session) {
+    delete session.attendance[name];
+    await saveSession(session);
+    await refreshSessionWidget(bot.telegram, session, master);
+  }
+
+  await ctx.editMessageText(membersText(master), { parse_mode: 'Markdown', ...membersKb(master) });
+  ctx.answerCbQuery(TEXT.memberDeletedShort(name));
+});
+
+// ─── Members widget: rename prompt ────────────────────────────────────────────
+bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const master = await getMaster();
+  const sorted = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = sorted[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(String(ctx.from.id), { action: 'rename', chatId: ctx.chat.id, msgId, oldName: name });
+  await ctx.answerCbQuery();
+  ctx.reply(TEXT.renamePrompt(name), { parse_mode: 'Markdown' });
+});
+
+// ─── Members widget: back to list ─────────────────────────────────────────────
+bot.action('mb:back', async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+  const master = await getMaster();
+  await ctx.editMessageText(membersText(master), { parse_mode: 'Markdown', ...membersKb(master) });
+  ctx.answerCbQuery();
+});
+
+// ─── Members widget: add member prompt ────────────────────────────────────────
+bot.action('mb:add', async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(String(ctx.from.id), { action: 'add', chatId: ctx.chat.id, msgId });
+  await ctx.answerCbQuery();
+  ctx.reply(TEXT.inlinePromptAdd);
+});
+
+// ─── Attendance widget: member records own status ─────────────────────────────
+bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
+  const session = await getSession();
+  if (!session?.active)
+    return ctx.answerCbQuery(TEXT.noSessionActive, { show_alert: true });
+
+  const master = await getMaster();
+  const uid    = String(ctx.from.id);
+  const member = master.members.find(m => m.userId === uid);
+  if (!member) {
+    if (!session.openRegistration)
+      return ctx.answerCbQuery(TEXT.needRegistration, { show_alert: true });
+
+    const name = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ')
+      || ctx.from.username || TEXT.noNameFallback;
+    master.members.push({ userId: uid, name });
+    await saveMaster(master);
+    session.attendance[name] = ctx.match[1];
+    await saveSession(session);
+    await refreshSessionWidget(bot.telegram, session, master);
+    return ctx.answerCbQuery(TEXT.registeredSelf(st(ctx.match[1]).a));
+  }
+
+  const newStatus = ctx.match[1];
+  session.attendance[member.name] = newStatus;
+  await saveSession(session);
+  await refreshSessionWidget(bot.telegram, session, master);
+  ctx.answerCbQuery(TEXT.registeredAs(st(newStatus).a));
+});
+
+// ─── Session manage: pick member to override ──────────────────────────────────
+bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const session = await getSession();
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+
+  const master = await getMaster();
+  const names  = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = names[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  const { e } = st(session.attendance[name] || null);
+
+  await ctx.editMessageText(
+    TEXT.managePickHeader(name, e),
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(TEXT.manageButtons.present,   `sm:set:${i}:present`),
+          Markup.button.callback(TEXT.manageButtons.listening, `sm:set:${i}:listening`),
+        ],
+        [
+          Markup.button.callback(TEXT.manageButtons.excused, `sm:set:${i}:excused`),
+          Markup.button.callback(TEXT.manageButtons.absent,  `sm:set:${i}:absent`),
+        ],
+        [Markup.button.callback(TEXT.manageButtons.back, 'sm:back')],
+      ]),
+    }
+  );
+  ctx.answerCbQuery();
+});
+
+// ─── Session manage: apply status ─────────────────────────────────────────────
+bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const session = await getSession();
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+
+  const master = await getMaster();
+  const names  = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = names[i];
+  const status = ctx.match[2];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  session.attendance[name] = status;
+  await saveSession(session);
+  await refreshSessionWidget(bot.telegram, session, master);
+
+  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  ctx.answerCbQuery(TEXT.statusSet(name, st(status).a));
+});
+
+// ─── Session manage: back / refresh ───────────────────────────────────────────
+bot.action('sm:back', async (ctx) => {
+  await ctx.answerCbQuery();
+  const session = await getSession();
+  if (!session) return;
+  const master = await getMaster();
+  ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+});
+
+bot.action('sm:refresh', async (ctx) => {
+  const session = await getSession();
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+  const master = await getMaster();
+  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  ctx.answerCbQuery(TEXT.refreshed);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TEXT HANDLER — catches awaiting admin input (add / rename)
+// ══════════════════════════════════════════════════════════════════════════════
+bot.on('text', async (ctx) => {
+  if (ctx.message.text.startsWith('/')) return;
+
+  const uid     = String(ctx.from.id);
+  const pending = await getAwaiting(uid);
+  if (!pending) return;
+
+  await delAwaiting(uid);
+  const input = ctx.message.text.trim();
+  if (!input) return ctx.reply(TEXT.emptyInput);
+
+  const master = await getMaster();
+
+  if (pending.action === 'add') {
+    const parts = input.split('|').map(s => s.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1])
+      return ctx.reply(TEXT.inlineInvalidAddFormat);
+
+    const [rawId, newName] = parts;
+    if (!/^\d+$/.test(rawId))
+      return ctx.reply(TEXT.invalidUserId);
+    const userId = rawId;
+
+    if (master.members.find(m => m.name === newName))
+      return ctx.reply(TEXT.memberExists(newName), { parse_mode: 'Markdown' });
+    if (master.members.find(m => m.userId === userId))
+      return ctx.reply(TEXT.userIdLinked(userId));
+
+    master.members.push({ userId, name: newName });
+    await saveMaster(master);
+
+    const session = await getSession();
+    if (session) {
+      session.attendance[newName] = null;
+      await saveSession(session);
+      await refreshSessionWidget(bot.telegram, session, master);
+    }
+
+    ctx.reply(TEXT.memberAdded(newName, userId), { parse_mode: 'Markdown' });
+    bot.telegram.editMessageText(
+      pending.chatId, pending.msgId, undefined,
+      membersText(master),
+      { parse_mode: 'Markdown', ...membersKb(master) }
+    ).catch(() => {});
+  }
+
+  if (pending.action === 'rename') {
+    const { oldName } = pending;
+    const newName = input;
+
+    if (master.members.find(m => m.name === newName))
+      return ctx.reply(TEXT.nameTaken(newName), { parse_mode: 'Markdown' });
+
+    const entry = master.members.find(m => m.name === oldName);
+    if (!entry)
+      return ctx.reply(TEXT.memberGone(oldName), { parse_mode: 'Markdown' });
+
+    entry.name = newName;
+    await saveMaster(master);
+
+    const session = await getSession();
+    if (session && oldName in session.attendance) {
+      session.attendance[newName] = session.attendance[oldName];
+      delete session.attendance[oldName];
+      await saveSession(session);
+      await refreshSessionWidget(bot.telegram, session, master);
+    }
+
+    ctx.reply(TEXT.memberRenamed(oldName, newName), { parse_mode: 'Markdown' });
+    bot.telegram.editMessageText(
+      pending.chatId, pending.msgId, undefined,
+      membersText(master),
+      { parse_mode: 'Markdown', ...membersKb(master) }
+    ).catch(() => {});
+  }
+});
+
+// ─── Error handler ────────────────────────────────────────────────────────────
+bot.catch((err, ctx) => {
+  console.error('Bot error:', err?.message);
+  ctx?.reply(TEXT.genericError).catch(() => {});
+});
+
+// ─── Launch ───────────────────────────────────────────────────────────────────
+// On Vercel/serverless the bot runs via webhook (see api/telegram.js).
+// Locally (or on a long-running host) it uses long-polling.
+if (require.main === module && !process.env.VERCEL) {
+  bot.launch().then(() => console.log('✅ Bot is running...'));
+  process.once('SIGINT',  () => bot.stop('SIGINT'));
+  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+}
+
+module.exports = bot;
