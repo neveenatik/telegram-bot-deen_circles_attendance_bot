@@ -18,9 +18,25 @@ const fileBackend = {
   saveSession:    async (s) => writeJSON(CURRENT_FILE, s),
   clearSession:   async ()  => writeJSON(CURRENT_FILE, null),
   getSessions:    async ()  => (readJSON(SESSIONS_FILE) || { sessions: [] }).sessions,
+  saveSessions:   async (sessions) => {
+    const h = readJSON(SESSIONS_FILE) || { sessions: [], currentSeries: 1 };
+    h.sessions = sessions;
+    if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
+    writeJSON(SESSIONS_FILE, h);
+  },
+  getCurrentSeries: async () => {
+    const h = readJSON(SESSIONS_FILE) || { sessions: [], currentSeries: 1 };
+    return Number.isInteger(h.currentSeries) && h.currentSeries > 0 ? h.currentSeries : 1;
+  },
+  saveCurrentSeries: async (series) => {
+    const h = readJSON(SESSIONS_FILE) || { sessions: [], currentSeries: 1 };
+    h.currentSeries = Number.isInteger(series) && series > 0 ? series : 1;
+    writeJSON(SESSIONS_FILE, h);
+  },
   archiveSession: async (s) => {
-    const h = readJSON(SESSIONS_FILE) || { sessions: [] };
+    const h = readJSON(SESSIONS_FILE) || { sessions: [], currentSeries: 1 };
     h.sessions.push(s);
+    if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
     writeJSON(SESSIONS_FILE, h);
   },
   getAwaiting:    async (uid)    => (readJSON(AWAIT_FILE) || {})[uid] || null,
@@ -49,9 +65,25 @@ function supabaseBackend() {
     saveSession:    async (s) => set('current', s),
     clearSession:   async ()  => set('current', null),
     getSessions:    async ()  => ((await get('sessions')) || { sessions: [] }).sessions,
+    saveSessions:   async (sessions) => {
+      const h = (await get('sessions')) || { sessions: [], currentSeries: 1 };
+      h.sessions = sessions;
+      if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
+      await set('sessions', h);
+    },
+    getCurrentSeries: async () => {
+      const h = (await get('sessions')) || { sessions: [], currentSeries: 1 };
+      return Number.isInteger(h.currentSeries) && h.currentSeries > 0 ? h.currentSeries : 1;
+    },
+    saveCurrentSeries: async (series) => {
+      const h = (await get('sessions')) || { sessions: [], currentSeries: 1 };
+      h.currentSeries = Number.isInteger(series) && series > 0 ? series : 1;
+      await set('sessions', h);
+    },
     archiveSession: async (s) => {
-      const h = (await get('sessions')) || { sessions: [] };
+      const h = (await get('sessions')) || { sessions: [], currentSeries: 1 };
       h.sessions.push(s);
+      if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
       await set('sessions', h);
     },
     getAwaiting:    async (uid)    => get(`await:${uid}`),

@@ -83,6 +83,11 @@ npm run set-webhook -- https://your-project.vercel.app/api/telegram
 | `/startsession [اسم]` | بدء جلسة حضور جديدة |
 | `/startopensession [اسم]` | بدء جلسة مفتوحة لأي عضوة |
 | `/stopregistration` | إيقاف تسجيل الحضور أثناء الجلسة |
+| `/closeseries` | إغلاق السلسلة الحالية والبدء بسلسلة جديدة |
+| `/records` | عرض سجلات السلسلة الحالية بالأرقام |
+| `/removerecord [رقم]` | حذف سجل جلسة مؤرشفة (يتطلب تأكيد) |
+| `/removememberrecord [رقم] | [الاسم]` | حذف سجل عضو من جلسة مؤرشفة (يتطلب تأكيد) |
+| `/clearrecords` | حذف جميع السجلات المؤرشفة (يتطلب تأكيد) |
 | `/endsession` | إنهاء الجلسة وعرض التقرير الكامل |
 | `/sessionmanage` | تعديل حالة أي عضو يدوياً |
 | `/history` | عرض سجل الجلسات السابقة |

@@ -4,7 +4,8 @@ const { Telegraf, Markup } = require('telegraf');
 // ─── Data layer (Supabase in prod, local files in dev) ────────────────────────
 const {
   getMaster, saveMaster, getSession, saveSession, clearSession, archiveSession,
-  getSessions, getAwaiting, setAwaiting, delAwaiting,
+  getSessions, saveSessions, getCurrentSeries, saveCurrentSeries,
+  getAwaiting, setAwaiting, delAwaiting,
 } = require('./storage');
 
 // ─── Guards & utils ───────────────────────────────────────────────────────────
@@ -43,6 +44,24 @@ const TEXT = {
   registrationStopped: '✅ تم إيقاف تسجيل الحضور. لن يتمكن الأعضاء من تغيير حالتهم الآن.',
   registrationAlreadyStopped: 'ℹ️ تسجيل الحضور متوقف بالفعل.',
   registrationClosedAlert: '⛔ تم إيقاف تسجيل الحضور حالياً.',
+  noSeriesRecords: (s) => `⚠️ لا توجد سجلات في السلسلة الحالية (${s}).`,
+  recordsHeader: (s, n) => `🗂️ سجلات السلسلة ${s} (${n})`,
+  recordsLine: (i, s) => `#${i} | ${s.name} | ${new Date(s.endedAt || s.startedAt).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
+  invalidRecordIndex: '⚠️ رقم السجل غير صالح. استخدمي /records لمعرفة الأرقام.',
+  invalidRemoveMemberRecordFormat: '⚠️ الصيغة الصحيحة:\n/removememberrecord [رقم السجل] | [اسم العضوة]',
+  recordMemberNotFound: (name) => `⚠️ لا يوجد سجل للعضوة *${name}* داخل السجل المحدد.`,
+  closeSeriesNeedsNoActiveSession: '⚠️ لا يمكن إغلاق السلسلة أثناء وجود حلقة نشطة. أنهِ الحلقة أولاً بـ /endsession.',
+  closeSeriesDone: (from, to) => `✅ تم إغلاق السلسلة ${from} وبدء السلسلة ${to}.`,
+  recordDeleted: (i) => `✅ تم حذف السجل #${i}.`,
+  allRecordsDeleted: '✅ تم حذف جميع سجلات الحلقات المؤرشفة.',
+  memberRecordDeleted: (name, i) => `✅ تم حذف سجل العضوة *${name}* من السجل #${i}.`,
+  confirmPrompt: (action) => `⚠️ *تأكيد مطلوب*\n${action}\n\nاضغطي زر التأكيد أدناه.`,
+  confirmNotFound: '⚠️ لا يوجد إجراء بانتظار التأكيد.',
+  confirmExpired: '⚠️ انتهت صلاحية التأكيد. أعيدي تنفيذ الأمر.',
+  confirmNotOwner: '⛔ لا يمكنك تأكيد إجراء طلبه مشرف آخر.',
+  confirmCancelled: '✅ تم إلغاء الإجراء.',
+  confirmButton: '✅ تأكيد التنفيذ',
+  cancelButton: '↩️ إلغاء',
   emptyMembers: '📋 *القائمة فارغة*\nاستخدم الزر أدناه لإضافة أعضاء.',
   addMemberButton: '➕ إضافة عضوة جديد',
   refreshButton: '🔄 تحديث',
@@ -101,6 +120,12 @@ const TEXT = {
         `/startsession [اسم الحلقة] – بدء حلقة للمسجلات فقط\n` +
         `/startopensession [اسم الحلقة] – بدء حلقة مفتوحة لأي عضوة\n` +
         `/stopregistration – إيقاف تسجيل الحضور أثناء الحلقة\n` +
+        `/closeseries – إغلاق السلسلة الحالية وبدء سلسلة جديدة\n` +
+        `/records – عرض سجلات السلسلة الحالية بالأرقام\n` +
+        `/removerecord [رقم] – حذف سجل واحد (بتأكيد)\n` +
+        `/removememberrecord [رقم] | [اسم] – حذف سجل عضوة من سجل محدد (بتأكيد)\n` +
+        `/clearrecords – حذف كل السجلات المؤرشفة (بتأكيد)` +
+        `\n` +
         `/endsession – إنهاء الحلقة وإغلاق تسجيل الحضور\n` +
         `/sessionmanage – تعديل حالات الحضور بشكل شخصي\n` +
         `/history – سجل عدد مرات الحضور والاعتذار والغياب لكل عضوة`
@@ -138,10 +163,78 @@ const TEXT = {
 const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 const calledState = (session, name) => session?.called?.[name] || null;
 const calledIcon = (state) => (state === 'responding' ? '👉 ' : state === 'responded' ? '✅ ' : state === 'away' ? '📣 ' : '⏳ ');
+const rawSessionNames = (session, master) => {
+  if (session?.openRegistration) return Object.keys(session.attendance || {});
+  return master.members.map(m => m.name);
+};
+const sessionNames = (session, master) => {
+  return sortArabic(rawSessionNames(session, master));
+};
+const pendingConfirms = new Map();
+const CONFIRM_TTL_MS = 10 * 60 * 1000;
+const sessionSeries = (s) => Number.isInteger(s?.seriesId) && s.seriesId > 0 ? s.seriesId : 1;
+const sessionsInSeries = (sessions, seriesId) => sessions.filter((s) => sessionSeries(s) === seriesId);
+const newConfirmToken = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const setPendingConfirm = (userId, payload) => {
+  const token = newConfirmToken();
+  pendingConfirms.set(token, {
+    token,
+    userId: String(userId),
+    expiresAt: Date.now() + CONFIRM_TTL_MS,
+    ...payload,
+  });
+  return token;
+};
+const confirmKb = (token) => Markup.inlineKeyboard([
+  [
+    Markup.button.callback(TEXT.confirmButton, `cf:ok:${token}`),
+    Markup.button.callback(TEXT.cancelButton, `cf:cancel:${token}`),
+  ],
+]);
+
+async function executePendingConfirm(pending) {
+  if (pending.action === 'closeSeries') {
+    if (await getSession()) return { text: TEXT.closeSeriesNeedsNoActiveSession };
+    const from = await getCurrentSeries();
+    const to = from + 1;
+    await saveCurrentSeries(to);
+    return { text: TEXT.closeSeriesDone(from, to) };
+  }
+
+  if (pending.action === 'removeRecord') {
+    const all = await getSessions();
+    if (pending.absoluteIndex < 0 || pending.absoluteIndex >= all.length)
+      return { text: TEXT.invalidRecordIndex };
+    all.splice(pending.absoluteIndex, 1);
+    await saveSessions(all);
+    return { text: TEXT.recordDeleted(pending.recordIndex) };
+  }
+
+  if (pending.action === 'removeMemberRecord') {
+    const all = await getSessions();
+    const target = all[pending.absoluteIndex];
+    if (!target) return { text: TEXT.invalidRecordIndex };
+    if (!target.attendance || !(pending.name in target.attendance))
+      return { text: TEXT.recordMemberNotFound(pending.name), parse_mode: 'Markdown' };
+
+    delete target.attendance[pending.name];
+    if (target.called && pending.name in target.called) delete target.called[pending.name];
+    all[pending.absoluteIndex] = target;
+    await saveSessions(all);
+    return { text: TEXT.memberRecordDeleted(pending.name, pending.recordIndex), parse_mode: 'Markdown' };
+  }
+
+  if (pending.action === 'clearRecords') {
+    await saveSessions([]);
+    return { text: TEXT.allRecordsDeleted };
+  }
+
+  return { text: TEXT.confirmNotFound };
+}
 
 // ─── ① SESSION WIDGET ─────────────────────────────────────────────────────────
 function sessionText(session, master) {
-  const names = sortArabic(master.members.map(m => m.name));
+  const names = sessionNames(session, master);
   const header = typeof TEXT.sessionHeader === 'function'
     ? TEXT.sessionHeader(session.name)
     : `📚 *حلقة: ${session.name}*`;
@@ -222,7 +315,7 @@ function memberOptionsKb(idx) {
 
 // ─── ③ SESSION MANAGE WIDGET ─────────────────────────────────────────────────
 function manageText(session, master) {
-  const names = sortArabic(master.members.map(m => m.name));
+  const names = sessionNames(session, master);
   let t = TEXT.manageHeader(session.name);
   for (const name of names) {
     const { e, a } = st(session.attendance[name] || null);
@@ -233,7 +326,7 @@ function manageText(session, master) {
 }
 
 function manageKb(session, master) {
-  const names = sortArabic(master.members.map(m => m.name));
+  const names = sessionNames(session, master);
   const rows = names.map((name, i) => {
     const { e } = st(session.attendance[name] || null);
     return [Markup.button.callback(`${e} ${name}`, `sm:pick:${i}`)];
@@ -270,12 +363,13 @@ bot.command('status', async (ctx) => {
     return ctx.reply(TEXT.statusNoSession(master.members.length));
 
   const counts = { present: 0, listening: 0, excused: 0, pending: 0 };
-  for (const m of master.members) {
-    const k = session.attendance[m.name] || 'pending';
+  const names = rawSessionNames(session, master);
+  for (const name of names) {
+    const k = session.attendance[name] || 'pending';
     counts[k] = (counts[k] || 0) + 1;
   }
   ctx.replyWithMarkdown(
-    TEXT.statusReport({ name: session.name, ...counts }, master.members.length)
+    TEXT.statusReport({ name: session.name, ...counts }, names.length)
   );
 });
 
@@ -381,13 +475,16 @@ async function startSession(ctx, openRegistration) {
   if (!name) return ctx.reply(TEXT.invalidStartFormat);
 
   const master = await getMaster();
-  const attendance = {};
-  for (const m of master.members) attendance[m.name] = null;
+  const currentSeries = await getCurrentSeries();
+  const attendance = openRegistration
+    ? {}
+    : Object.fromEntries(master.members.map((m) => [m.name, null]));
 
   const session = {
     name,
     startedAt: new Date().toISOString(),
     startedBy: ctx.from.id,
+    seriesId: currentSeries,
     chatId:    ctx.chat.id,
     messageId: null,
     active:    true,
@@ -423,6 +520,119 @@ bot.command('stopregistration', async (ctx) => {
   ctx.reply(TEXT.registrationStopped);
 });
 
+// ─── Series and records management (admin, with confirm) ─────────────────────
+bot.command('closeseries', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  if (await getSession()) return ctx.reply(TEXT.closeSeriesNeedsNoActiveSession);
+
+  const current = await getCurrentSeries();
+  const token = setPendingConfirm(ctx.from.id, { action: 'closeSeries', current });
+  return ctx.replyWithMarkdown(
+    TEXT.confirmPrompt(`إغلاق السلسلة ${current} وبدء سلسلة جديدة`),
+    confirmKb(token)
+  );
+});
+
+bot.command('records', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const all = await getSessions();
+  const currentSeries = await getCurrentSeries();
+  const scoped = sessionsInSeries(all, currentSeries);
+  if (!scoped.length) return ctx.reply(TEXT.noSeriesRecords(currentSeries));
+
+  const lines = scoped.map((s, i) => TEXT.recordsLine(i + 1, s));
+  return ctx.reply(`${TEXT.recordsHeader(currentSeries, scoped.length)}\n\n${lines.join('\n')}`);
+});
+
+bot.command('removerecord', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  const idx = parseInt(raw, 10);
+  if (!Number.isInteger(idx) || idx < 1) return ctx.reply(TEXT.invalidRecordIndex);
+
+  const all = await getSessions();
+  const currentSeries = await getCurrentSeries();
+  const scopedAbs = all
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => sessionSeries(s) === currentSeries);
+  const picked = scopedAbs[idx - 1];
+  if (!picked) return ctx.reply(TEXT.invalidRecordIndex);
+
+  const token = setPendingConfirm(ctx.from.id, {
+    action: 'removeRecord',
+    absoluteIndex: picked.i,
+    recordIndex: idx,
+  });
+  return ctx.replyWithMarkdown(TEXT.confirmPrompt(`حذف السجل #${idx}`), confirmKb(token));
+});
+
+bot.command('removememberrecord', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  const parts = raw.split('|').map((s) => s.trim());
+  if (parts.length !== 2 || !parts[0] || !parts[1])
+    return ctx.reply(TEXT.invalidRemoveMemberRecordFormat);
+
+  const idx = parseInt(parts[0], 10);
+  const name = parts[1];
+  if (!Number.isInteger(idx) || idx < 1) return ctx.reply(TEXT.invalidRecordIndex);
+
+  const all = await getSessions();
+  const currentSeries = await getCurrentSeries();
+  const scopedAbs = all
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => sessionSeries(s) === currentSeries);
+  const picked = scopedAbs[idx - 1];
+  if (!picked) return ctx.reply(TEXT.invalidRecordIndex);
+  if (!picked.s.attendance || !(name in picked.s.attendance))
+    return ctx.reply(TEXT.recordMemberNotFound(name), { parse_mode: 'Markdown' });
+
+  const token = setPendingConfirm(ctx.from.id, {
+    action: 'removeMemberRecord',
+    absoluteIndex: picked.i,
+    recordIndex: idx,
+    name,
+  });
+  return ctx.replyWithMarkdown(
+    TEXT.confirmPrompt(`حذف سجل ${name} من السجل #${idx}`),
+    confirmKb(token)
+  );
+});
+
+bot.command('clearrecords', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const token = setPendingConfirm(ctx.from.id, { action: 'clearRecords' });
+  return ctx.replyWithMarkdown(TEXT.confirmPrompt('حذف جميع السجلات المؤرشفة'), confirmKb(token));
+});
+
+bot.action(/^cf:(ok|cancel):([A-Z0-9]{6})$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const mode = ctx.match[1];
+  const token = ctx.match[2];
+  const pending = pendingConfirms.get(token);
+  if (!pending)
+    return ctx.answerCbQuery(TEXT.confirmNotFound, { show_alert: true });
+  if (pending.userId !== String(ctx.from.id))
+    return ctx.answerCbQuery(TEXT.confirmNotOwner, { show_alert: true });
+  if (pending.expiresAt < Date.now()) {
+    pendingConfirms.delete(token);
+    return ctx.answerCbQuery(TEXT.confirmExpired, { show_alert: true });
+  }
+
+  if (mode === 'cancel') {
+    pendingConfirms.delete(token);
+    await ctx.editMessageText(TEXT.confirmCancelled);
+    return ctx.answerCbQuery();
+  }
+
+  pendingConfirms.delete(token);
+  const result = await executePendingConfirm(pending);
+  await ctx.editMessageText(result.text, result.parse_mode ? { parse_mode: result.parse_mode } : undefined);
+  return ctx.answerCbQuery();
+});
+
 // ─── /endsession ──────────────────────────────────────────────────────────────
 bot.command('endsession', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
@@ -431,9 +641,11 @@ bot.command('endsession', async (ctx) => {
 
   const master = await getMaster();
 
-  // Everyone who never responded becomes absent
-  for (const m of master.members) {
-    if (!session.attendance[m.name]) session.attendance[m.name] = 'absent';
+  // Everyone who never responded becomes absent.
+  // In open sessions, this applies only to participants present in this session.
+  const absentBase = rawSessionNames(session, master);
+  for (const name of absentBase) {
+    if (!session.attendance[name]) session.attendance[name] = 'absent';
   }
   session.active  = false;
   session.endedAt = new Date().toISOString();
@@ -446,9 +658,9 @@ bot.command('endsession', async (ctx) => {
   await archiveSession(session);
   await clearSession();
 
-  const names  = sortArabic(master.members.map(m => m.name));
   const groups = { present: [], listening: [], excused: [], absent: [] };
-  for (const n of names) {
+  const reportNames = sessionNames(session, master);
+  for (const n of reportNames) {
     const k = session.attendance[n] || 'absent';
     (groups[k] || groups.absent).push(n);
   }
@@ -467,7 +679,9 @@ bot.command('sessionmanage', async (ctx) => {
 
 bot.command('history', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const sessions = await getSessions();
+  const all = await getSessions();
+  const currentSeries = await getCurrentSeries();
+  const sessions = sessionsInSeries(all, currentSeries);
   if (!sessions.length) return ctx.reply(TEXT.historyEmpty);
   const master  = await getMaster();
   const tally   = {};
@@ -653,7 +867,7 @@ bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
   const master = await getMaster();
-  const names  = sortArabic(master.members.map(m => m.name));
+  const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
@@ -700,7 +914,7 @@ bot.action(/^sm:call:(\d+):(responding|responded|away|clear)$/, async (ctx) => {
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
   const master = await getMaster();
-  const names  = sortArabic(master.members.map(m => m.name));
+  const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
@@ -729,7 +943,7 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
   const master = await getMaster();
-  const names  = sortArabic(master.members.map(m => m.name));
+  const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
   const status = ctx.match[2];
