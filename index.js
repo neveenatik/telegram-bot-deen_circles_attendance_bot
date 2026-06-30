@@ -39,6 +39,10 @@ const TEXT = {
   genericError: '⚠️ حدث خطأ. يرجى المحاولة لاحقاً.',
   sessionEnded: '_✅ الحلقة منتهية_',
   sessionJoinPrompt: '_سجّل حضورك باستخدام الأزرار أدناه:_',
+  sessionRegistrationClosed: '_⛔ تم إيقاف تسجيل الحضور حالياً من قبل المشرف._',
+  registrationStopped: '✅ تم إيقاف تسجيل الحضور. لن يتمكن الأعضاء من تغيير حالتهم الآن.',
+  registrationAlreadyStopped: 'ℹ️ تسجيل الحضور متوقف بالفعل.',
+  registrationClosedAlert: '⛔ تم إيقاف تسجيل الحضور حالياً.',
   emptyMembers: '📋 *القائمة فارغة*\nاستخدم الزر أدناه لإضافة أعضاء.',
   addMemberButton: '➕ إضافة عضوة جديد',
   refreshButton: '🔄 تحديث',
@@ -96,6 +100,7 @@ const TEXT = {
         `/renamemember [قديم] | [جديد] – تعديل اسم عضو\n` +
         `/startsession [اسم الحلقة] – بدء حلقة للمسجلات فقط\n` +
         `/startopensession [اسم الحلقة] – بدء حلقة مفتوحة لأي عضوة\n` +
+        `/stopregistration – إيقاف تسجيل الحضور أثناء الحلقة\n` +
         `/endsession – إنهاء الحلقة وإغلاق تسجيل الحضور\n` +
         `/sessionmanage – تعديل حالات الحضور بشكل شخصي\n` +
         `/history – سجل عدد مرات الحضور والاعتذار والغياب لكل عضوة`
@@ -149,13 +154,13 @@ function sessionText(session, master) {
   }
   t += `\n`;
   t += session.active
-    ? TEXT.sessionJoinPrompt
+    ? (session.registrationOpen === false ? TEXT.sessionRegistrationClosed : TEXT.sessionJoinPrompt)
     : TEXT.sessionEnded;
   return t;
 }
 
-const sessionKb = (active) =>
-  active
+const sessionKb = (active, registrationOpen = true) =>
+  active && registrationOpen
     ? Markup.inlineKeyboard([[
         Markup.button.callback(TEXT.statusButtons.present, 'a:present'),
         Markup.button.callback(TEXT.statusButtons.listening, 'a:listening'),
@@ -169,7 +174,7 @@ async function refreshSessionWidget(telegram, session, master) {
     await telegram.editMessageText(
       session.chatId, session.messageId, undefined,
       sessionText(session, master),
-      { parse_mode: 'Markdown', ...sessionKb(session.active) }
+      { parse_mode: 'Markdown', ...sessionKb(session.active, session.registrationOpen !== false) }
     );
   } catch (e) {
     if (!e.message?.includes('message is not modified'))
@@ -386,12 +391,13 @@ async function startSession(ctx, openRegistration) {
     chatId:    ctx.chat.id,
     messageId: null,
     active:    true,
+    registrationOpen: true,
     openRegistration,
     attendance,
     called: {},
   };
 
-  const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true));
+  const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true, true));
   session.messageId = sent.message_id;
   await saveSession(session);
 
@@ -400,6 +406,22 @@ async function startSession(ctx, openRegistration) {
 
 bot.command('startsession',     (ctx) => startSession(ctx, false)); // registered only
 bot.command('startopensession', (ctx) => startSession(ctx, true));  // any member
+
+// ─── /stopregistration ───────────────────────────────────────────────────────
+bot.command('stopregistration', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const session = await getSession();
+  if (!session) return ctx.reply(TEXT.noSessionActive);
+  if (session.registrationOpen === false)
+    return ctx.reply(TEXT.registrationAlreadyStopped);
+
+  session.registrationOpen = false;
+  await saveSession(session);
+
+  const master = await getMaster();
+  await refreshSessionWidget(bot.telegram, session, master);
+  ctx.reply(TEXT.registrationStopped);
+});
 
 // ─── /endsession ──────────────────────────────────────────────────────────────
 bot.command('endsession', async (ctx) => {
@@ -595,6 +617,8 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
   const session = await getSession();
   if (!session?.active)
     return ctx.answerCbQuery(TEXT.noSessionActive, { show_alert: true });
+  if (session.registrationOpen === false)
+    return ctx.answerCbQuery(TEXT.registrationClosedAlert, { show_alert: true });
 
   const master = await getMaster();
   const uid    = String(ctx.from.id);

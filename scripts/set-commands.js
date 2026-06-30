@@ -15,6 +15,7 @@ const commands = [
   { command: 'renamemember', description: 'تعديل اسم عضو (للمشرف)' },
   { command: 'startsession', description: 'بدء جلسة للمسجلات (للمشرف)' },
   { command: 'startopensession', description: 'بدء جلسة مفتوحة (للمشرف)' },
+  { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
   { command: 'endsession', description: 'إنهاء الجلسة الحالية (للمشرف)' },
   { command: 'sessionmanage', description: 'تعديل حالات الحضور (للمشرف)' },
   { command: 'history', description: 'عرض سجل الجلسات (للمشرف)' },
