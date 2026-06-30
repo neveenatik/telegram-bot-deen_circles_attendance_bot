@@ -1,4 +1,4 @@
-require('dotenv').config();
+import 'dotenv/config';
 
 async function main() {
   const url = process.env.SUPABASE_URL;

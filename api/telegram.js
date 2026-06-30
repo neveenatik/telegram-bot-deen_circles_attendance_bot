@@ -1,8 +1,8 @@
 // Vercel serverless webhook endpoint for Telegram.
 // Telegram POSTs updates here; we hand each one to the bot.
-const bot = require('../index');
+import bot from '../index.js';
 
-module.exports = async (req, res) => {
+export default async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(200).send('Attendance bot webhook is up.');
   }

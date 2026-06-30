@@ -1,7 +1,7 @@
 // One-off helper to register Telegram command menu/autocomplete.
 // Run: npm run set-commands
-require('dotenv').config();
-const { Telegraf } = require('telegraf');
+import 'dotenv/config';
+import { Telegraf } from 'telegraf';
 
 const commands = [
   { command: 'start', description: 'عرض رسالة الترحيب (للمشرف)' },
