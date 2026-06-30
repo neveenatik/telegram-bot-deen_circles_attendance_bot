@@ -84,10 +84,11 @@ const TEXT = {
   help: (admin) =>
     `مرحباً! 👋 *بوت الحضور*\n\n` +
     `*للأعضاء:*\n` +
-    `/myid – اكتبيه داخل المجموعة لتُضافي إلى قائمة المسجلات\n` +
-    `/status – ملخص حضور الحلقة الحالية` +
+    `/myid – يستخدم داخل المجموعة للحصول على المعلومات الللازمة ليستطيع الأدمن إضافتك إلى قائمة المسجلات\n` +
+    `` +
     (admin
       ? `\n\n*للمشرف:*\n` +
+        `/status – ملخص حضور الحلقة الحالية\n` +
         `/members – إدارة قائمة الأعضاء (إضافة / حذف / تعديل)\n` +
         `/registerinfo – إرسال توضيح طريقة التسجيل للأعضاء\n` +
         `/addmember [معرّف] | [اسم] – إضافة عضو بمعرّف تيليغرام\n` +
@@ -258,6 +259,7 @@ bot.command('registerinfo', async (ctx) => {
 
 // ─── /status ──────────────────────────────────────────────────────────────────
 bot.command('status', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const session = await getSession();
   const master  = await getMaster();
   if (!session)

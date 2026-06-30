@@ -7,7 +7,7 @@ const commands = [
   { command: 'start', description: 'عرض رسالة الترحيب' },
   { command: 'help', description: 'عرض قائمة الأوامر' },
   { command: 'myid', description: 'عرض معرف حسابك' },
-  { command: 'status', description: 'ملخص حالة الجلسة الحالية' },
+  { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
   { command: 'members', description: 'إدارة قائمة الأعضاء (للمشرف)' },
   { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
   { command: 'addmember', description: 'إضافة عضو (للمشرف)' },
