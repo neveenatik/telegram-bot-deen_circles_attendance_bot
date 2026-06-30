@@ -4,7 +4,7 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 
 const commands = [
-  { command: 'start', description: 'عرض رسالة الترحيب' },
+  { command: 'start', description: 'عرض رسالة الترحيب (للمشرف)' },
   { command: 'help', description: 'عرض قائمة الأوامر' },
   { command: 'myid', description: 'عرض معرف حسابك' },
   { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
@@ -16,11 +16,11 @@ const commands = [
   { command: 'startsession', description: 'بدء جلسة للمسجلات (للمشرف)' },
   { command: 'startopensession', description: 'بدء جلسة مفتوحة (للمشرف)' },
   { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
-  { command: 'closeseries', description: 'إغلاق السلسلة الحالية (للمشرف)' },
+  { command: 'resetseries', description: 'إعادة تعيين السلسلة الحالية (لمنشئ المجموعة)' },
   { command: 'records', description: 'عرض سجلات السلسلة الحالية (للمشرف)' },
-  { command: 'removerecord', description: 'حذف سجل مؤرشف برقم (للمشرف)' },
-  { command: 'removememberrecord', description: 'حذف سجل عضو من جلسة (للمشرف)' },
-  { command: 'clearrecords', description: 'حذف كل السجلات المؤرشفة (للمشرف)' },
+  { command: 'removerecord', description: 'حذف سجل برقم من السلسلة الحالية (لمنشئ المجموعة)' },
+  { command: 'removememberrecord', description: 'حذف سجل عضو من جلسة في السلسلة الحالية (لمنشئ المجموعة)' },
+  { command: 'clearrecords', description: 'حذف كل السجلات المؤرشفة (لمنشئ المجموعة)' },
   { command: 'endsession', description: 'إنهاء الجلسة الحالية (للمشرف)' },
   { command: 'sessionmanage', description: 'تعديل حالات الحضور (للمشرف)' },
   { command: 'history', description: 'عرض سجل الجلسات (للمشرف)' },

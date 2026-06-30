@@ -20,12 +20,22 @@ async function isAdmin(ctx) {
     return false;
   }
 }
+async function isCreator(ctx) {
+  if (ctx.chat?.type === 'private') return false;
+  try {
+    const member = await ctx.getChatMember(ctx.from.id);
+    return member.status === 'creator';
+  } catch {
+    return false;
+  }
+}
 const sortArabic = (arr) =>
   [...arr].sort((a, b) => a.localeCompare(b, 'ar'));
 
 // ─── Shared Arabic text ───────────────────────────────────────────────────────
 const TEXT = {
   adminOnly: '⛔ هذا الأمر متاح للمشرفين فقط.',
+  creatorOnly: '⛔ هذا الأمر متاح لمنشئ المجموعة فقط.',
   noSessionActive: '⚠️ لا توجد حلقة نشطة.',
   sessionAlreadyActive: '⚠️ توجد حلقة نشطة بالفعل. أنهِها أولاً بـ /endsession',
   memberNotFound: '⚠️ العضو غير موجود.',
@@ -120,11 +130,11 @@ const TEXT = {
         `/startsession [اسم الحلقة] – بدء حلقة للمسجلات فقط\n` +
         `/startopensession [اسم الحلقة] – بدء حلقة مفتوحة لأي عضوة\n` +
         `/stopregistration – إيقاف تسجيل الحضور أثناء الحلقة\n` +
-        `/closeseries – إغلاق السلسلة الحالية وبدء سلسلة جديدة\n` +
+        `/resetseries – إعادة تعيين السلسلة الحالية والبدء بسلسلة جديدة (لمنشئ المجموعة)\n` +
         `/records – عرض سجلات السلسلة الحالية بالأرقام\n` +
-        `/removerecord [رقم] – حذف سجل واحد (بتأكيد)\n` +
-        `/removememberrecord [رقم] | [اسم] – حذف سجل عضوة من سجل محدد (بتأكيد)\n` +
-        `/clearrecords – حذف كل السجلات المؤرشفة (بتأكيد)` +
+        `/removerecord [رقم] – حذف سجل من السلسلة الحالية (بتأكيد، لمنشئ المجموعة)\n` +
+        `/removememberrecord [رقم] | [اسم] – حذف سجل عضوة من سجل في السلسلة الحالية (بتأكيد، لمنشئ المجموعة)\n` +
+        `/clearrecords – حذف كل السجلات المؤرشفة (بتأكيد، لمنشئ المجموعة)` +
         `\n` +
         `/endsession – إنهاء الحلقة وإغلاق تسجيل الحضور\n` +
         `/sessionmanage – تعديل حالات الحضور بشكل شخصي\n` +
@@ -338,7 +348,10 @@ function manageKb(session, master) {
 // ─── BOT ──────────────────────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-bot.start(async (ctx) => ctx.replyWithMarkdown(TEXT.help(await isAdmin(ctx))));
+bot.start(async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  return ctx.replyWithMarkdown(TEXT.help(true));
+});
 bot.help(async (ctx)  => ctx.replyWithMarkdown(TEXT.help(await isAdmin(ctx))));
 
 // ─── /myid ────────────────────────────────────────────────────────────────────
@@ -521,8 +534,8 @@ bot.command('stopregistration', async (ctx) => {
 });
 
 // ─── Series and records management (admin, with confirm) ─────────────────────
-bot.command('closeseries', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+async function resetSeriesCommand(ctx) {
+  if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   if (await getSession()) return ctx.reply(TEXT.closeSeriesNeedsNoActiveSession);
 
   const current = await getCurrentSeries();
@@ -531,7 +544,11 @@ bot.command('closeseries', async (ctx) => {
     TEXT.confirmPrompt(`إغلاق السلسلة ${current} وبدء سلسلة جديدة`),
     confirmKb(token)
   );
-});
+}
+
+bot.command('resetseries', resetSeriesCommand);
+// Backward-compatible alias; hidden from docs/commands.
+bot.command('closeseries', resetSeriesCommand);
 
 bot.command('records', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
@@ -545,7 +562,7 @@ bot.command('records', async (ctx) => {
 });
 
 bot.command('removerecord', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const idx = parseInt(raw, 10);
   if (!Number.isInteger(idx) || idx < 1) return ctx.reply(TEXT.invalidRecordIndex);
@@ -567,7 +584,7 @@ bot.command('removerecord', async (ctx) => {
 });
 
 bot.command('removememberrecord', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const parts = raw.split('|').map((s) => s.trim());
   if (parts.length !== 2 || !parts[0] || !parts[1])
@@ -600,14 +617,14 @@ bot.command('removememberrecord', async (ctx) => {
 });
 
 bot.command('clearrecords', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   const token = setPendingConfirm(ctx.from.id, { action: 'clearRecords' });
   return ctx.replyWithMarkdown(TEXT.confirmPrompt('حذف جميع السجلات المؤرشفة'), confirmKb(token));
 });
 
 bot.action(/^cf:(ok|cancel):([A-Z0-9]{6})$/, async (ctx) => {
-  if (!await isAdmin(ctx))
-    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+  if (!await isCreator(ctx))
+    return ctx.answerCbQuery(TEXT.creatorOnly, { show_alert: true });
 
   const mode = ctx.match[1];
   const token = ctx.match[2];
