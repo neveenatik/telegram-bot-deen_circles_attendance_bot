@@ -1,8 +1,11 @@
-const fs   = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Local file backend (dev / fallback) ──────────────────────────────────────
-const DATA_DIR                     = path.join(__dirname, 'data');
+const DATA_DIR = path.join(__dirname, 'data');
 const MASTER_FILE                  = path.join(DATA_DIR, 'masterList.json');
 const SESSIONS_FILE                = path.join(DATA_DIR, 'sessions.json');
 const CURRENT_FILE                 = path.join(DATA_DIR, 'currentSession.json');
@@ -141,8 +144,8 @@ const fileBackend = {
 
 // ─── Supabase backend (production) ─────────────────────────────────────────────
 // Table:  kv ( key text primary key, value jsonb )
-function supabaseBackend() {
-  const { createClient } = require('@supabase/supabase-js');
+async function supabaseBackend() {
+  const { createClient } = await import('@supabase/supabase-js');
   const db = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -238,7 +241,7 @@ function supabaseBackend() {
 }
 
 const useSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-const backend     = useSupabase ? supabaseBackend() : fileBackend;
+const backend = useSupabase ? await supabaseBackend() : fileBackend;
 console.log(useSupabase ? '🗄️  Storage: Supabase' : '🗄️  Storage: local files');
 
-module.exports = backend;
+export default backend;
