@@ -71,6 +71,7 @@ const TEXT = {
   confirmCancelled: '✅ تم إلغاء الإجراء.',
   confirmButton: '✅ تأكيد التنفيذ',
   cancelButton: '↩️ إلغاء',
+  hiddenManageList: '✅ تم إخفاء لوحة التعديل.',
   sortedNamesHeader: (n) => `🔤 الأسماء بعد الترتيب (${n}):`,
   emptyMembers: '📋 *القائمة فارغة*\nاستخدم الزر أدناه لإضافة أعضاء.',
   addMemberButton: '➕ إضافة عضوة جديد',
@@ -161,6 +162,7 @@ const TEXT = {
     excused: '🔔 معتذرة',
     absent: '❌ غياب',
     addGuest: '➕ إضافة ضيفة',
+    hide: '🙈 إخفاء',
     markCalling: '👉 جاري الرد',
     markResponded: '✅ حاضرة',
     markAway: '📣 مبتعدة',
@@ -347,7 +349,10 @@ function manageKb(session, master) {
     return [Markup.button.callback(`${e} ${name}`, `sm:pick:${i}`)];
   });
   rows.push([Markup.button.callback(TEXT.manageButtons.addGuest, 'sm:addguest')]);
-  rows.push([Markup.button.callback(TEXT.refreshButton, 'sm:refresh')]);
+  rows.push([
+    Markup.button.callback(TEXT.refreshButton, 'sm:refresh'),
+    Markup.button.callback(TEXT.manageButtons.hide, 'sm:hide'),
+  ]);
   return Markup.inlineKeyboard(rows);
 }
 
@@ -1040,6 +1045,18 @@ bot.action('sm:refresh', async (ctx) => {
   const master = await getMaster(groupId);
   await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(TEXT.refreshed);
+});
+
+bot.action('sm:hide', async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  await ctx.answerCbQuery();
+  try {
+    await ctx.deleteMessage();
+  } catch {
+    await ctx.editMessageText(TEXT.hiddenManageList);
+  }
 });
 
 bot.action('sm:addguest', async (ctx) => {
