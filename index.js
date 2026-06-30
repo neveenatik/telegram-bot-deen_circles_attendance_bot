@@ -1543,6 +1543,11 @@ bot.on('text', async (ctx) => {
     session.pages[memberName] = parsedPage;
     await saveSession(groupId, session);
 
+    // Save to pageProgress for cross-session memory
+    const progress = await getPageProgress(groupId);
+    progress[memberName] = parsedPage;
+    await savePageProgress(groupId, progress);
+
     await refreshSessionWidget(bot.telegram, session, master);
     bot.telegram.editMessageText(
       pending.chatId, pending.msgId, undefined,
