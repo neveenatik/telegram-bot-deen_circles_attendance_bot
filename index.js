@@ -44,7 +44,6 @@ const TEXT = {
   invalidStartFormat: '⚠️ مثال: /startlist اجتماع يونيو',
   invalidRemoveFormat: '⚠️ مثال: /removestudent فاطمة محمد',
   invalidUserId: '⚠️ معرّف المستخدم يجب أن يكون رقماً صحيحاً.',
-  registrationPrompt: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | فاطمة محمد',
   emptyInput: '⚠️ الإدخال لا يمكن أن يكون فارغاً.',
   needRegistration: '⚠️ لم تُسجّل اسمك بعد.\nأرسل /register [اسمك] أولاً.',
   genericError: '⚠️ حدث خطأ. يرجى المحاولة لاحقاً.',
@@ -181,6 +180,7 @@ const rawSessionNames = (session, master) => {
 const sessionNames = (session, master) => {
   return sortArabic(rawSessionNames(session, master));
 };
+const groupIdFromCtx = (ctx) => String(ctx.chat.id);
 const pendingConfirms = new Map();
 const CONFIRM_TTL_MS = 10 * 60 * 1000;
 const sessionSeries = (s) => Number.isInteger(s?.seriesId) && s.seriesId > 0 ? s.seriesId : 1;
@@ -204,25 +204,27 @@ const confirmKb = (token) => Markup.inlineKeyboard([
 ]);
 
 async function executePendingConfirm(pending) {
+  const groupId = String(pending.groupId);
+
   if (pending.action === 'closeSeries') {
-    if (await getSession()) return { text: TEXT.closeSeriesNeedsNoActiveSession };
-    const from = await getCurrentSeries();
+    if (await getSession(groupId)) return { text: TEXT.closeSeriesNeedsNoActiveSession };
+    const from = await getCurrentSeries(groupId);
     const to = from + 1;
-    await saveCurrentSeries(to);
+    await saveCurrentSeries(groupId, to);
     return { text: TEXT.closeSeriesDone(from, to) };
   }
 
   if (pending.action === 'removeRecord') {
-    const all = await getSessions();
+    const all = await getSessions(groupId);
     if (pending.absoluteIndex < 0 || pending.absoluteIndex >= all.length)
       return { text: TEXT.invalidRecordIndex };
     all.splice(pending.absoluteIndex, 1);
-    await saveSessions(all);
+    await saveSessions(groupId, all);
     return { text: TEXT.recordDeleted(pending.recordIndex) };
   }
 
   if (pending.action === 'removeMemberRecord') {
-    const all = await getSessions();
+    const all = await getSessions(groupId);
     const target = all[pending.absoluteIndex];
     if (!target) return { text: TEXT.invalidRecordIndex };
     if (!target.attendance || !(pending.name in target.attendance))
@@ -231,7 +233,7 @@ async function executePendingConfirm(pending) {
     delete target.attendance[pending.name];
     if (target.called && pending.name in target.called) delete target.called[pending.name];
     all[pending.absoluteIndex] = target;
-    await saveSessions(all);
+    await saveSessions(groupId, all);
     return { text: TEXT.memberRecordDeleted(pending.name, pending.recordIndex), parse_mode: 'Markdown' };
   }
 
@@ -390,8 +392,9 @@ bot.command('sortnames', async (ctx) => {
 // ─── /status ──────────────────────────────────────────────────────────────────
 bot.command('status', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const session = await getSession();
-  const master  = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
+  const master  = await getMaster(groupId);
   if (!session)
     return ctx.reply(TEXT.statusNoSession(master.members.length));
 
@@ -409,13 +412,15 @@ bot.command('status', async (ctx) => {
 // ─── /students ────────────────────────────────────────────────────────────────
 bot.command('students', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const master = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const master = await getMaster(groupId);
   ctx.replyWithMarkdown(membersText(master), membersKb(master));
 });
 
 // ─── /addstudent ──────────────────────────────────────────────────────────────
 bot.command('addstudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const groupId = groupIdFromCtx(ctx);
   const args  = ctx.message.text.split(' ').slice(1).join(' ');
   const parts = args.split('|').map(s => s.trim());
   if (parts.length !== 2 || !parts[0] || !parts[1])
@@ -426,20 +431,20 @@ bot.command('addstudent', async (ctx) => {
     return ctx.reply(TEXT.invalidUserId);
   const userId = rawId;
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   if (master.members.find(m => m.name === name))
     return ctx.reply(TEXT.memberExists(name), { parse_mode: 'Markdown' });
   if (master.members.find(m => m.userId === userId))
     return ctx.reply(TEXT.userIdLinked(userId));
 
   master.members.push({ userId, name });
-  await saveMaster(master);
+  await saveMaster(groupId, master);
 
-  const session = await getSession();
+  const session = await getSession(groupId);
   if (session) {
     session.attendance[name] = null;
     if (session.called) session.called[name] = null;
-    await saveSession(session);
+    await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
   ctx.reply(TEXT.memberAdded(name, userId), { parse_mode: 'Markdown' });
@@ -448,21 +453,22 @@ bot.command('addstudent', async (ctx) => {
 // ─── /removestudent ───────────────────────────────────────────────────────────
 bot.command('removestudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const groupId = groupIdFromCtx(ctx);
   const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
   if (!name) return ctx.reply(TEXT.invalidRemoveFormat);
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   const idx = master.members.findIndex(m => m.name === name);
   if (idx === -1)
     return ctx.reply(TEXT.memberNotInList(name), { parse_mode: 'Markdown' });
 
   master.members.splice(idx, 1);
-  await saveMaster(master);
+  await saveMaster(groupId, master);
 
-  const session = await getSession();
+  const session = await getSession(groupId);
   if (session) {
     delete session.attendance[name];
-    await saveSession(session);
+    await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
   ctx.reply(TEXT.memberDeleted(name), { parse_mode: 'Markdown' });
@@ -471,13 +477,14 @@ bot.command('removestudent', async (ctx) => {
 // ─── /renamestudent ───────────────────────────────────────────────────────────
 bot.command('renamestudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const groupId = groupIdFromCtx(ctx);
   const args  = ctx.message.text.split(' ').slice(1).join(' ');
   const parts = args.split('|').map(s => s.trim());
   if (parts.length !== 2 || !parts[0] || !parts[1])
     return ctx.reply(TEXT.invalidRenameFormat);
 
   const [oldName, newName] = parts;
-  const master = await getMaster();
+  const master = await getMaster(groupId);
 
   const entry = master.members.find(m => m.name === oldName);
   if (!entry)
@@ -486,13 +493,13 @@ bot.command('renamestudent', async (ctx) => {
     return ctx.reply(TEXT.nameTaken(newName), { parse_mode: 'Markdown' });
 
   entry.name = newName;
-  await saveMaster(master);
+  await saveMaster(groupId, master);
 
-  const session = await getSession();
+  const session = await getSession(groupId);
   if (session && oldName in session.attendance) {
     session.attendance[newName] = session.attendance[oldName];
     delete session.attendance[oldName];
-    await saveSession(session);
+    await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
   ctx.reply(TEXT.memberRenamed(oldName, newName), { parse_mode: 'Markdown' });
@@ -501,14 +508,15 @@ bot.command('renamestudent', async (ctx) => {
 // ─── /startlist & /startregisteredlist ───────────────────────────────────────
 async function startSession(ctx, openRegistration) {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  if (await getSession())
+  const groupId = groupIdFromCtx(ctx);
+  if (await getSession(groupId))
     return ctx.reply(TEXT.sessionAlreadyActive);
 
   const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
   if (!name) return ctx.reply(TEXT.invalidStartFormat);
 
-  const master = await getMaster();
-  const currentSeries = await getCurrentSeries();
+  const master = await getMaster(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
   const attendance = openRegistration
     ? {}
     : Object.fromEntries(master.members.map((m) => [m.name, null]));
@@ -529,7 +537,7 @@ async function startSession(ctx, openRegistration) {
 
   const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true, true));
   session.messageId = sent.message_id;
-  await saveSession(session);
+  await saveSession(groupId, session);
 
   try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
 }
@@ -540,15 +548,16 @@ bot.command('startregisteredlist', (ctx) => startSession(ctx, false)); // regist
 // ─── /stopregistration ───────────────────────────────────────────────────────
 bot.command('stopregistration', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.reply(TEXT.noSessionActive);
   if (session.registrationOpen === false)
     return ctx.reply(TEXT.registrationAlreadyStopped);
 
   session.registrationOpen = false;
-  await saveSession(session);
+  await saveSession(groupId, session);
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   await refreshSessionWidget(bot.telegram, session, master);
   ctx.reply(TEXT.registrationStopped);
 });
@@ -556,10 +565,11 @@ bot.command('stopregistration', async (ctx) => {
 // ─── Series and records management (admin, with confirm) ─────────────────────
 async function resetSeriesCommand(ctx) {
   if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
-  if (await getSession()) return ctx.reply(TEXT.closeSeriesNeedsNoActiveSession);
+  const groupId = groupIdFromCtx(ctx);
+  if (await getSession(groupId)) return ctx.reply(TEXT.closeSeriesNeedsNoActiveSession);
 
-  const current = await getCurrentSeries();
-  const token = setPendingConfirm(ctx.from.id, { action: 'closeSeries', current });
+  const current = await getCurrentSeries(groupId);
+  const token = setPendingConfirm(ctx.from.id, { action: 'closeSeries', current, groupId });
   return ctx.replyWithMarkdown(
     TEXT.confirmPrompt(`إغلاق السلسلة ${current} وبدء سلسلة جديدة`),
     confirmKb(token)
@@ -570,8 +580,9 @@ bot.command('newclass', resetSeriesCommand);
 
 bot.command('classhistory', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const all = await getSessions();
-  const currentSeries = await getCurrentSeries();
+  const groupId = groupIdFromCtx(ctx);
+  const all = await getSessions(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
   const scoped = sessionsInSeries(all, currentSeries);
   if (!scoped.length) return ctx.reply(TEXT.noSeriesRecords(currentSeries));
 
@@ -581,12 +592,13 @@ bot.command('classhistory', async (ctx) => {
 
 bot.command('removeclassrecord', async (ctx) => {
   if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
+  const groupId = groupIdFromCtx(ctx);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const idx = parseInt(raw, 10);
   if (!Number.isInteger(idx) || idx < 1) return ctx.reply(TEXT.invalidRecordIndex);
 
-  const all = await getSessions();
-  const currentSeries = await getCurrentSeries();
+  const all = await getSessions(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
   const scopedAbs = all
     .map((s, i) => ({ s, i }))
     .filter(({ s }) => sessionSeries(s) === currentSeries);
@@ -595,6 +607,7 @@ bot.command('removeclassrecord', async (ctx) => {
 
   const token = setPendingConfirm(ctx.from.id, {
     action: 'removeRecord',
+    groupId,
     absoluteIndex: picked.i,
     recordIndex: idx,
   });
@@ -603,6 +616,7 @@ bot.command('removeclassrecord', async (ctx) => {
 
 bot.command('removestudentrecord', async (ctx) => {
   if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
+  const groupId = groupIdFromCtx(ctx);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const parts = raw.split('|').map((s) => s.trim());
   if (parts.length !== 2 || !parts[0] || !parts[1])
@@ -612,8 +626,8 @@ bot.command('removestudentrecord', async (ctx) => {
   const name = parts[1];
   if (!Number.isInteger(idx) || idx < 1) return ctx.reply(TEXT.invalidRecordIndex);
 
-  const all = await getSessions();
-  const currentSeries = await getCurrentSeries();
+  const all = await getSessions(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
   const scopedAbs = all
     .map((s, i) => ({ s, i }))
     .filter(({ s }) => sessionSeries(s) === currentSeries);
@@ -624,6 +638,7 @@ bot.command('removestudentrecord', async (ctx) => {
 
   const token = setPendingConfirm(ctx.from.id, {
     action: 'removeMemberRecord',
+    groupId,
     absoluteIndex: picked.i,
     recordIndex: idx,
     name,
@@ -665,10 +680,11 @@ bot.action(/^cf:(ok|cancel):([A-Z0-9]{6})$/, async (ctx) => {
 // ─── /stoplist ───────────────────────────────────────────────────────────────
 async function stopListCommand(ctx) {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.reply(TEXT.noSessionActive);
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
 
   // Everyone who never responded becomes absent.
   // In open sessions, this applies only to participants present in this session.
@@ -684,8 +700,8 @@ async function stopListCommand(ctx) {
 
   try { await ctx.unpinChatMessage(session.messageId); } catch (_) {}
 
-  await archiveSession(session);
-  await clearSession();
+  await archiveSession(groupId, session);
+  await clearSession(groupId);
 
   const groups = { present: [], listening: [], excused: [], absent: [] };
   const reportNames = sessionNames(session, master);
@@ -702,19 +718,21 @@ bot.command('stoplist', stopListCommand);
 // ─── /editlist ────────────────────────────────────────────────────────────────
 bot.command('editlist', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.reply(TEXT.noSessionActive);
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   ctx.replyWithMarkdown(manageText(session, master), manageKb(session, master));
 });
 
 bot.command('studentshistory', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
-  const all = await getSessions();
-  const currentSeries = await getCurrentSeries();
+  const groupId = groupIdFromCtx(ctx);
+  const all = await getSessions(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
   const sessions = sessionsInSeries(all, currentSeries);
   if (!sessions.length) return ctx.reply(TEXT.historyEmpty);
-  const master  = await getMaster();
+  const master  = await getMaster(groupId);
   const tally   = {};
   for (const name of master.members.map(m => m.name)) {
     tally[name] = { present: 0, listening: 0, excused: 0, absent: 0 };
@@ -740,7 +758,8 @@ bot.action(/^mb:pick:(\d+)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const master = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const master = await getMaster(groupId);
   const sorted = sortArabic(master.members.map(m => m.name));
   const i      = parseInt(ctx.match[1], 10);
   const name   = sorted[i];
@@ -758,20 +777,21 @@ bot.action(/^mb:del:(\d+)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const master = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const master = await getMaster(groupId);
   const sorted = sortArabic(master.members.map(m => m.name));
   const i      = parseInt(ctx.match[1], 10);
   const name   = sorted[i];
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
 
   master.members.splice(master.members.findIndex(m => m.name === name), 1);
-  await saveMaster(master);
+  await saveMaster(groupId, master);
 
-  const session = await getSession();
+  const session = await getSession(groupId);
   if (session) {
     delete session.attendance[name];
     if (session.called) delete session.called[name];
-    await saveSession(session);
+    await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
 
@@ -784,7 +804,8 @@ bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const master = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const master = await getMaster(groupId);
   const sorted = sortArabic(master.members.map(m => m.name));
   const i      = parseInt(ctx.match[1], 10);
   const name   = sorted[i];
@@ -792,7 +813,7 @@ bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
 
   await ctx.answerCbQuery();
   const msgId = ctx.callbackQuery.message.message_id;
-  await setAwaiting(String(ctx.from.id), {
+  await setAwaiting(groupId, String(ctx.from.id), {
     action: 'rename',
     chatId: ctx.chat.id,
     msgId,
@@ -808,7 +829,7 @@ bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
       selective: true,
     },
   });
-  await setAwaiting(String(ctx.from.id), {
+  await setAwaiting(groupId, String(ctx.from.id), {
     action: 'rename',
     chatId: ctx.chat.id,
     msgId,
@@ -822,7 +843,8 @@ bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
 bot.action('mb:back', async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
-  const master = await getMaster();
+  const groupId = groupIdFromCtx(ctx);
+  const master = await getMaster(groupId);
   await ctx.editMessageText(membersText(master), { parse_mode: 'Markdown', ...membersKb(master) });
   ctx.answerCbQuery();
 });
@@ -832,9 +854,10 @@ bot.action('mb:add', async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
+  const groupId = groupIdFromCtx(ctx);
   await ctx.answerCbQuery();
   const msgId = ctx.callbackQuery.message.message_id;
-  await setAwaiting(String(ctx.from.id), {
+  await setAwaiting(groupId, String(ctx.from.id), {
     action: 'add',
     chatId: ctx.chat.id,
     msgId,
@@ -848,7 +871,7 @@ bot.action('mb:add', async (ctx) => {
       selective: true,
     },
   });
-  await setAwaiting(String(ctx.from.id), {
+  await setAwaiting(groupId, String(ctx.from.id), {
     action: 'add',
     chatId: ctx.chat.id,
     msgId,
@@ -859,13 +882,14 @@ bot.action('mb:add', async (ctx) => {
 
 // ─── Attendance widget: member records own status ─────────────────────────────
 bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session?.active)
     return ctx.answerCbQuery(TEXT.noSessionActive, { show_alert: true });
   if (session.registrationOpen === false)
     return ctx.answerCbQuery(TEXT.registrationClosedAlert, { show_alert: true });
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   const uid    = String(ctx.from.id);
   const member = master.members.find(m => m.userId === uid);
   if (!member) {
@@ -875,16 +899,16 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
     const name = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ')
       || ctx.from.username || TEXT.noNameFallback;
     master.members.push({ userId: uid, name });
-    await saveMaster(master);
+    await saveMaster(groupId, master);
     session.attendance[name] = ctx.match[1];
-    await saveSession(session);
+    await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
     return ctx.answerCbQuery(TEXT.registeredSelf(st(ctx.match[1]).a));
   }
 
   const newStatus = ctx.match[1];
   session.attendance[member.name] = newStatus;
-  await saveSession(session);
+  await saveSession(groupId, session);
   await refreshSessionWidget(bot.telegram, session, master);
   ctx.answerCbQuery(TEXT.registeredAs(st(newStatus).a));
 });
@@ -894,10 +918,11 @@ bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
@@ -941,10 +966,11 @@ bot.action(/^sm:call:(\d+):(responding|responded|away|clear)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
@@ -953,7 +979,7 @@ bot.action(/^sm:call:(\d+):(responding|responded|away|clear)$/, async (ctx) => {
 
   if (!session.called) session.called = {};
   session.called[name] = state === 'clear' ? null : state;
-  await saveSession(session);
+  await saveSession(groupId, session);
   await refreshSessionWidget(bot.telegram, session, master);
 
   await refreshManageWidget(ctx, session, master);
@@ -970,10 +996,11 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   const names  = sessionNames(session, master);
   const i      = parseInt(ctx.match[1], 10);
   const name   = names[i];
@@ -981,7 +1008,7 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
 
   session.attendance[name] = status;
-  await saveSession(session);
+  await saveSession(groupId, session);
   await refreshSessionWidget(bot.telegram, session, master);
 
   await refreshManageWidget(ctx, session, master);
@@ -991,16 +1018,18 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
 // ─── Session manage: back / refresh ───────────────────────────────────────────
 bot.action('sm:back', async (ctx) => {
   await ctx.answerCbQuery();
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return;
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   await refreshManageWidget(ctx, session, master);
 });
 
 bot.action('sm:refresh', async (ctx) => {
-  const session = await getSession();
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
-  const master = await getMaster();
+  const master = await getMaster(groupId);
   await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(TEXT.refreshed);
 });
@@ -1011,8 +1040,9 @@ bot.action('sm:refresh', async (ctx) => {
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
 
+  const groupId = groupIdFromCtx(ctx);
   const uid     = String(ctx.from.id);
-  const pending = await getAwaiting(uid);
+  const pending = await getAwaiting(groupId, uid);
   if (!pending) return;
 
   if (pending.awaitingPrompt && !pending.promptMsgId) {
@@ -1025,11 +1055,11 @@ bot.on('text', async (ctx) => {
       return ctx.reply(TEXT.replyToPromptOnly);
   }
 
-  await delAwaiting(uid);
+  await delAwaiting(groupId, uid);
   const input = ctx.message.text.trim();
   if (!input) return ctx.reply(TEXT.emptyInput);
 
-  const master = await getMaster();
+  const master = await getMaster(groupId);
 
   if (pending.action === 'add') {
     const parts = input.split('|').map(s => s.trim());
@@ -1047,12 +1077,12 @@ bot.on('text', async (ctx) => {
       return ctx.reply(TEXT.userIdLinked(userId));
 
     master.members.push({ userId, name: newName });
-    await saveMaster(master);
+    await saveMaster(groupId, master);
 
-    const session = await getSession();
+    const session = await getSession(groupId);
     if (session) {
       session.attendance[newName] = null;
-      await saveSession(session);
+      await saveSession(groupId, session);
       await refreshSessionWidget(bot.telegram, session, master);
     }
 
@@ -1076,9 +1106,9 @@ bot.on('text', async (ctx) => {
       return ctx.reply(TEXT.memberGone(oldName), { parse_mode: 'Markdown' });
 
     entry.name = newName;
-    await saveMaster(master);
+    await saveMaster(groupId, master);
 
-    const session = await getSession();
+    const session = await getSession(groupId);
     if (session && oldName in session.attendance) {
       session.attendance[newName] = session.attendance[oldName];
       delete session.attendance[oldName];
@@ -1086,7 +1116,7 @@ bot.on('text', async (ctx) => {
         session.called[newName] = session.called[oldName];
         delete session.called[oldName];
       }
-      await saveSession(session);
+      await saveSession(groupId, session);
       await refreshSessionWidget(bot.telegram, session, master);
     }
 
