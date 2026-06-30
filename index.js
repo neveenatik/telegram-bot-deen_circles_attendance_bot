@@ -106,6 +106,9 @@ const TEXT = {
   inlinePromptAdd: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | أحمد محمد',
   inlineInvalidAddFormat: '⚠️ الصيغة الصحيحة:\n[معرّف تيليغرام] | [الاسم]\nمثال: 123456789 | أحمد محمد',
   replyToPromptOnly: '↩️ من فضلك اكتب الرد على رسالة الإدخال نفسها.',
+  addGuestPrompt: '📝 اكتب اسم الضيفة لإضافتها إلى هذه القائمة:',
+  guestExistsInSession: (name) => `⚠️ الاسم *${name}* موجود بالفعل في هذه القائمة.`,
+  guestAddedToSession: (name) => `✅ تمت إضافة الضيفة *${name}* إلى القائمة الحالية.`,
   report: (session, groups) => {
     let r = `📊 *تقرير قائمة "${session.name}":*\n\n`;
     if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
@@ -157,6 +160,7 @@ const TEXT = {
     listening: '👂 مستمعة',
     excused: '🔔 معتذرة',
     absent: '❌ غياب',
+    addGuest: '➕ إضافة ضيفة',
     markCalling: '👉 جاري الرد',
     markResponded: '✅ حاضرة',
     markAway: '📣 مبتعدة',
@@ -174,8 +178,11 @@ const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 const calledState = (session, name) => session?.called?.[name] || null;
 const calledIcon = (state) => (state === 'responding' ? '👉 ' : state === 'responded' ? '✅ ' : state === 'away' ? '📣 ' : '⏳ ');
 const rawSessionNames = (session, master) => {
-  if (session?.openRegistration) return Object.keys(session.attendance || {});
-  return master.members.map(m => m.name);
+  const attendanceKeys = Object.keys(session?.attendance || {});
+  if (session?.openRegistration) return attendanceKeys;
+  const base = master.members.map(m => m.name);
+  const extras = attendanceKeys.filter((name) => !base.includes(name));
+  return [...base, ...extras];
 };
 const sessionNames = (session, master) => {
   return sortArabic(rawSessionNames(session, master));
@@ -339,6 +346,7 @@ function manageKb(session, master) {
     const { e } = st(session.attendance[name] || null);
     return [Markup.button.callback(`${e} ${name}`, `sm:pick:${i}`)];
   });
+  rows.push([Markup.button.callback(TEXT.manageButtons.addGuest, 'sm:addguest')]);
   rows.push([Markup.button.callback(TEXT.refreshButton, 'sm:refresh')]);
   return Markup.inlineKeyboard(rows);
 }
@@ -1034,6 +1042,40 @@ bot.action('sm:refresh', async (ctx) => {
   ctx.answerCbQuery(TEXT.refreshed);
 });
 
+bot.action('sm:addguest', async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+
+  await ctx.answerCbQuery();
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(groupId, String(ctx.from.id), {
+    action: 'addGuest',
+    chatId: ctx.chat.id,
+    msgId,
+    promptMsgId: null,
+    awaitingPrompt: true,
+  });
+  const prompt = await ctx.reply(TEXT.addGuestPrompt, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: 'اسم الضيفة',
+      selective: true,
+    },
+  });
+  await setAwaiting(groupId, String(ctx.from.id), {
+    action: 'addGuest',
+    chatId: ctx.chat.id,
+    msgId,
+    promptMsgId: prompt.message_id,
+    awaitingPrompt: false,
+  });
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // TEXT HANDLER — catches awaiting admin input (add / rename)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1126,6 +1168,28 @@ bot.on('text', async (ctx) => {
       membersText(master),
       { parse_mode: 'Markdown', ...membersKb(master) }
     ).catch(() => {});
+  }
+
+  if (pending.action === 'addGuest') {
+    const newName = input;
+    const session = await getSession(groupId);
+    if (!session) return ctx.reply(TEXT.noSessionActive);
+    if (session.attendance && newName in session.attendance)
+      return ctx.reply(TEXT.guestExistsInSession(newName), { parse_mode: 'Markdown' });
+
+    if (!session.attendance) session.attendance = {};
+    session.attendance[newName] = null;
+    if (!session.called) session.called = {};
+    session.called[newName] = null;
+    await saveSession(groupId, session);
+
+    await refreshSessionWidget(bot.telegram, session, master);
+    bot.telegram.editMessageText(
+      pending.chatId, pending.msgId, undefined,
+      manageText(session, master),
+      { parse_mode: 'Markdown', ...manageKb(session, master) }
+    ).catch(() => {});
+    return ctx.reply(TEXT.guestAddedToSession(newName), { parse_mode: 'Markdown' });
   }
 });
 
