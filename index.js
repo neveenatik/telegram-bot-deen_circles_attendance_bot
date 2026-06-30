@@ -7,6 +7,7 @@ const {
   getSessions, saveSessions, getCurrentSeries, saveCurrentSeries,
   getAwaiting, setAwaiting, delAwaiting,
   getPageProgress, savePageProgress,
+  getGroupRecitationNextPage, saveGroupRecitationNextPage,
 } = require('./storage');
 
 // ─── Guards & utils ───────────────────────────────────────────────────────────
@@ -32,6 +33,54 @@ async function isCreator(ctx) {
 }
 const sortArabic = (arr) =>
   [...arr].sort((a, b) => a.localeCompare(b, 'ar'));
+
+// ─── Page parsing helpers ─────────────────────────────────────────────────────
+// Parses page input: single (5), range (3-5), or list (2,4,6)
+// Returns: string representation or null if invalid
+function parsePageInput(input) {
+  const trimmed = input.trim();
+  
+  // Single number: 5
+  if (/^\d+$/.test(trimmed)) {
+    const num = parseInt(trimmed, 10);
+    if (num < 1 || num > 604) return null;
+    return String(num);
+  }
+  
+  // Range: 3-5
+  if (/^\d+-\d+$/.test(trimmed)) {
+    const [start, end] = trimmed.split('-').map(s => parseInt(s, 10));
+    if (start < 1 || end > 604 || start > end) return null;
+    return `${start}-${end}`;
+  }
+  
+  // List: 2,4,6
+  if (/^(\d+,)*\d+$/.test(trimmed)) {
+    const nums = trimmed.split(',').map(s => parseInt(s.trim(), 10));
+    if (nums.some(n => n < 1 || n > 604)) return null;
+    return nums.join(',');
+  }
+  
+  return null;
+}
+
+// Formats page(s) for display: "5" -> "ص5", "3-5" -> "ص3-5", "2,4,6" -> "ص2،4،6"
+function formatPages(pageValue) {
+  if (!pageValue) return '';
+  const str = String(pageValue);
+  // Replace commas with Arabic comma for display
+  const formatted = str.replace(/,/g, '،');
+  return `ص${formatted}`;
+}
+
+// Gets first page number for sorting purposes
+function getFirstPage(pageValue) {
+  if (!pageValue) return 0;
+  const str = String(pageValue);
+  // Extract first number from "5" or "3-5" or "2,4,6"
+  const match = str.match(/^\d+/);
+  return match ? parseInt(match[0], 10) : 0;
+}
 
 // ─── Shared Arabic text ───────────────────────────────────────────────────────
 const TEXT = {
@@ -115,9 +164,22 @@ const TEXT = {
   addGuestPrompt: '📝 اكتب اسم الضيفة لإضافتها إلى هذه القائمة:',
   guestExistsInSession: (name) => `⚠️ الاسم *${name}* موجود بالفعل في هذه القائمة.`,
   guestAddedToSession: (name) => `✅ تمت إضافة الضيفة *${name}* إلى القائمة الحالية.`,
-  editPagePrompt: (name) => `📄 أدخلي رقم الصفحة الجديدة لـ *${name}* (1-604):`,
-  invalidPageNumber: '⚠️ رقم الصفحة يجب أن يكون عدداً صحيحاً بين 1 و 604.',
-  pageEditedSuccess: (name, page) => `✅ تم تعديل صفحة *${name}* إلى ص${page}.`,
+  editPagePrompt: (name) => `📄 أدخلي رقم الصفحة أو نطاق الصفحات لـ *${name}* (1-604):\nأمثلة: 5 أو 3-5 أو 2,4,6`,
+  invalidPageNumber: '⚠️ أدخل رقماً واحداً (3)، نطاقاً (3-5)، أو قائمة (2,4,6). جميع الأرقام يجب أن تكون بين 1 و 604.',
+  pageEditedSuccess: (name, page) => `✅ تم تعديل صفحة *${name}* إلى ${page}.`,
+  invalidStartGroupRecitationFormat: '⚠️ مثال: /startgrouprecitation جلسة التلاوة الجماعية',
+  groupRecitationJoinPrompt: '_سجّلي حضورك لتحصلي على صفحتكِ من التلاوة الجماعية:_',
+  pageAssignedGroupRecitation: (name, page) => `✅ ${name} — صفحة ${page}`,
+  groupRecitationReport: (session) => {
+    const pages = session.pages || {};
+    const entries = Object.entries(pages)
+      .filter(([, p]) => p)
+      .sort((a, b) => getFirstPage(a[1]) - getFirstPage(b[1]));
+    if (!entries.length) return `📖 *تقرير التلاوة الجماعية "${session.name}":*\n\nلم يُسجّل أحد.`;
+    let r = `📖 *تقرير التلاوة الجماعية "${session.name}" (${entries.length} طالبة):*\n\n`;
+    r += entries.map(([name, page]) => `📄 ${formatPages(page)} — ${name}`).join('\n');
+    return r;
+  },
   report: (session, groups) => {
     let r = `📊 *تقرير قائمة "${session.name}":*\n\n`;
     if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
@@ -130,10 +192,10 @@ const TEXT = {
     const pages = session.pages || {};
     const entries = Object.entries(pages)
       .filter(([, p]) => p)
-      .sort((a, b) => a[1] - b[1]);
+      .sort((a, b) => getFirstPage(a[1]) - getFirstPage(b[1]));
     if (!entries.length) return `📖 *تقرير قائمة "${session.name}":*\n\nلم يُسجّل أحد.`;
     let r = `📖 *تقرير قائمة "${session.name}" (${entries.length} طالبة):*\n\n`;
-    r += entries.map(([name, page]) => `📄 ص${page} — ${name}`).join('\n');
+    r += entries.map(([name, page]) => `📄 ${formatPages(page)} — ${name}`).join('\n');
     return r;
   },
   help: (admin) =>
@@ -153,6 +215,7 @@ const TEXT = {
         `/startlist [اسم الحلقة] – بدء قائمة مفتوحة لأي طالبة\n` +
         `/startregisteredlist [اسم الحلقة] – بدء قائمة لمجموعة الطالبات الخاصة\n` +
         `/startpagelist [اسم] أو [اسم] | [رقم الصفحة] – بدء قائمة قراءة مفتوحة وتوزيع الصفحات تلقائياً\n` +
+        `/startgrouprecitation [اسم] – بدء تلاوة جماعية متسلسلة (صفحة واحدة لكل حاضر)\n` +
         `/stopregistration – إيقاف تسجيل الحضور في القائمة\n` +
         `/newclass – مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)\n` +
         `/classhistory – عرض سجلات الدورة الحالية مع رقم كل حلقة\n` +
@@ -281,10 +344,10 @@ function sessionText(session, master) {
     const key = session.attendance[name] || null;
     const { e, a } = st(key);
     const callMark = calledIcon(calledState(session, name));
-    if (session.pageList) {
+    if (session.pageList || session.groupRecitation) {
       const page = session.pages?.[name];
       if (page) {
-        t += `${e} ${callMark}${name} – ص${page}\n`;
+        t += `${e} ${callMark}${name} – ${formatPages(page)}\n`;
       } else {
         t += `${e} ${callMark}${name}\n`;
       }
@@ -297,7 +360,9 @@ function sessionText(session, master) {
   t += session.active
     ? (session.registrationOpen === false
         ? TEXT.sessionRegistrationClosed
-        : session.pageList ? TEXT.pageListJoinPrompt : TEXT.sessionJoinPrompt)
+        : session.pageList ? TEXT.pageListJoinPrompt
+        : session.groupRecitation ? TEXT.groupRecitationJoinPrompt
+        : TEXT.sessionJoinPrompt)
     : TEXT.sessionEnded;
   return t;
 }
@@ -626,6 +691,43 @@ bot.command('startpagelist', async (ctx) => {
   try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
 });
 
+// ─── /startgrouprecitation ────────────────────────────────────────────────────
+bot.command('startgrouprecitation', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const groupId = groupIdFromCtx(ctx);
+  if (await getSession(groupId)) return ctx.reply(TEXT.sessionAlreadyActive);
+
+  const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!name) return ctx.reply(TEXT.invalidStartGroupRecitationFormat);
+
+  const master = await getMaster(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
+  const nextPage = await getGroupRecitationNextPage(groupId);
+
+  const session = {
+    name,
+    startedAt: new Date().toISOString(),
+    startedBy: ctx.from.id,
+    seriesId: currentSeries,
+    chatId: ctx.chat.id,
+    messageId: null,
+    active: true,
+    registrationOpen: true,
+    openRegistration: true,
+    groupRecitation: true,
+    groupRecitationStartPage: nextPage,
+    pages: {},
+    attendance: {},
+    called: {},
+  };
+
+  const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true, true));
+  session.messageId = sent.message_id;
+  await saveSession(groupId, session);
+
+  try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
+});
+
 // ─── /stopregistration ───────────────────────────────────────────────────────
 bot.command('stopregistration', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
@@ -793,6 +895,11 @@ async function stopListCommand(ctx) {
     await savePageProgress(groupId, progress);
   }
 
+  // Save next page for group recitation sessions
+  if (session.groupRecitation && session.groupRecitationStartPage) {
+    await saveGroupRecitationNextPage(groupId, session.groupRecitationStartPage);
+  }
+
   const groups = { present: [], listening: [], excused: [], absent: [] };
   const reportNames = sessionNames(session, master);
   for (const n of reportNames) {
@@ -802,6 +909,8 @@ async function stopListCommand(ctx) {
 
   if (session.pageList) {
     ctx.replyWithMarkdown(TEXT.pageListReport(session));
+  } else if (session.groupRecitation) {
+    ctx.replyWithMarkdown(TEXT.groupRecitationReport(session));
   } else {
     ctx.replyWithMarkdown(TEXT.report(session, groups));
   }
@@ -986,6 +1095,8 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
   const master = await getMaster(groupId);
   const uid    = String(ctx.from.id);
   const member = master.members.find(m => m.userId === uid);
+  const status = ctx.match[1];
+
   if (!member) {
     if (!session.openRegistration)
       return ctx.answerCbQuery(TEXT.needRegistration, { show_alert: true });
@@ -994,26 +1105,42 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
       || ctx.from.username || TEXT.noNameFallback;
     master.members.push({ userId: uid, name });
     await saveMaster(groupId, master);
-    session.attendance[name] = ctx.match[1];
-    // Assign page from memory for page list sessions
+    session.attendance[name] = status;
+
+    // Assign page for page list sessions (from memory)
     if (session.pageList) {
       if (session.pages[name] !== undefined && session.pages[name] !== null) {
+        await saveSession(groupId, session);
         return ctx.answerCbQuery(TEXT.alreadyHasPage(session.pages[name]), { show_alert: true });
       }
       const progress = await getPageProgress(groupId);
       session.pages[name] = (progress[name] || 0) + 1;
     }
+
+    // Assign page for group recitation sessions (only if present, sequential)
+    if (session.groupRecitation && status === 'present') {
+      if (!session.pages) session.pages = {};
+      if (!session.groupRecitationStartPage) session.groupRecitationStartPage = 1;
+      session.pages[name] = session.groupRecitationStartPage;
+      session.groupRecitationStartPage += 1;
+    }
+
     await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
-    const toast = session.pageList
-      ? TEXT.pageAssigned(name, session.pages[name])
-      : TEXT.registeredSelf(st(ctx.match[1]).a);
+    let toast;
+    if (session.pageList) {
+      toast = TEXT.pageAssigned(name, session.pages[name]);
+    } else if (session.groupRecitation && status === 'present') {
+      toast = TEXT.pageAssignedGroupRecitation(name, session.pages[name]);
+    } else {
+      toast = TEXT.registeredSelf(st(status).a);
+    }
     return ctx.answerCbQuery(toast, { show_alert: !!session.pageList });
   }
 
-  const newStatus = ctx.match[1];
-  session.attendance[member.name] = newStatus;
-  // Assign page from memory for page list sessions
+  session.attendance[member.name] = status;
+
+  // Assign page for page list sessions (from memory)
   if (session.pageList) {
     if (session.pages[member.name] !== undefined && session.pages[member.name] !== null) {
       await saveSession(groupId, session);
@@ -1023,11 +1150,32 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
     const progress = await getPageProgress(groupId);
     session.pages[member.name] = (progress[member.name] || 0) + 1;
   }
+
+  // Assign page for group recitation sessions (only if present, sequential)
+  if (session.groupRecitation && status === 'present') {
+    if (!session.pages) session.pages = {};
+    if (!session.groupRecitationStartPage) session.groupRecitationStartPage = 1;
+    if (session.pages[member.name] === undefined || session.pages[member.name] === null) {
+      session.pages[member.name] = session.groupRecitationStartPage;
+      session.groupRecitationStartPage += 1;
+    }
+  } else if (session.groupRecitation && session.pages && member.name in session.pages) {
+    // If status changes from present to non-present, remove the page assignment
+    delete session.pages[member.name];
+  }
+
   await saveSession(groupId, session);
   await refreshSessionWidget(bot.telegram, session, master);
-  const toast = session.pageList
-    ? TEXT.pageAssigned(member.name, session.pages[member.name])
-    : TEXT.registeredAs(st(newStatus).a);
+  let toast;
+  if (session.pageList) {
+    toast = TEXT.pageAssigned(member.name, session.pages[member.name]);
+  } else if (session.groupRecitation && status === 'present') {
+    toast = session.pages[member.name]
+      ? TEXT.pageAssignedGroupRecitation(member.name, session.pages[member.name])
+      : TEXT.registeredAs(st(status).a);
+  } else {
+    toast = TEXT.registeredAs(st(status).a);
+  }
   ctx.answerCbQuery(toast, { show_alert: !!session.pageList });
 });
 
@@ -1371,16 +1519,16 @@ bot.on('text', async (ctx) => {
   if (pending.action === 'editPage') {
     const { memberName } = pending;
     const pageStr = input.trim();
-    const page = parseInt(pageStr, 10);
+    const parsedPage = parsePageInput(pageStr);
 
-    if (isNaN(page) || page < 1 || page > 604)
+    if (!parsedPage)
       return ctx.reply(TEXT.invalidPageNumber);
 
     const session = await getSession(groupId);
     if (!session) return ctx.reply(TEXT.noSessionActive);
     if (!session.pages) session.pages = {};
 
-    session.pages[memberName] = page;
+    session.pages[memberName] = parsedPage;
     await saveSession(groupId, session);
 
     await refreshSessionWidget(bot.telegram, session, master);
@@ -1389,7 +1537,7 @@ bot.on('text', async (ctx) => {
       manageText(session, master),
       { parse_mode: 'Markdown', ...manageKb(session, master) }
     ).catch(() => {});
-    return ctx.reply(TEXT.pageEditedSuccess(memberName, page), { parse_mode: 'Markdown' });
+    return ctx.reply(TEXT.pageEditedSuccess(memberName, formatPages(parsedPage)), { parse_mode: 'Markdown' });
   }
 });
 
