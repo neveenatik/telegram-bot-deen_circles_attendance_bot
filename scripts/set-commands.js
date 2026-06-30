@@ -17,6 +17,7 @@ const commands = [
   { command: 'startlist', description: 'بدء قائمة مفتوحة (للمشرف)' },
   { command: 'startregisteredlist', description: 'بدء قائمة للمسجلات (للمشرف)' },
   { command: 'startpagelist', description: 'بدء قائمة قراءة وتوزيع صفحات تلقائي (للمشرف)' },
+  { command: 'startgrouprecitation', description: 'بدء تلاوة جماعية متسلسلة (للمشرف)' },
   { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
   { command: 'newclass', description: 'مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)' },
   { command: 'classhistory', description: 'عرض سجلات الدورة الحالية مع رقم كل حلقة (للمشرف)' },
