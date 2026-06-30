@@ -185,7 +185,7 @@ const rawSessionNames = (session, master) => {
   return [...base, ...extras];
 };
 const sessionNames = (session, master) => {
-  return sortArabic(rawSessionNames(session, master));
+  return rawSessionNames(session, master);
 };
 const groupIdFromCtx = (ctx) => String(ctx.chat.id);
 const pendingConfirms = new Map();
