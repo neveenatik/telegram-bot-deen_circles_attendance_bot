@@ -113,7 +113,7 @@ const TEXT = {
     excused: '🔔 معتذرة',
   },
   manageButtons: {
-    present: '✅ حاضرة',
+    present: '✅ تسجيل حضور',
     listening: '👂 مستمعة',
     excused: '🔔 معتذرة',
     absent: '❌ غياب',
