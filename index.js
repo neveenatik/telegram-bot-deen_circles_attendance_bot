@@ -59,6 +59,7 @@ const TEXT = {
   recordsLine: (i, s) => `#${i} | ${s.name} | ${new Date(s.endedAt || s.startedAt).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
   invalidRecordIndex: '⚠️ رقم السجل غير صالح. استخدمي /records لمعرفة الأرقام.',
   invalidRemoveMemberRecordFormat: '⚠️ الصيغة الصحيحة:\n/removememberrecord [رقم السجل] | [اسم العضوة]',
+  invalidSortNamesFormat: '⚠️ الصيغة الصحيحة:\n/sortnames اسم1 | اسم2 | اسم3\nويمكن أيضاً استخدام الفاصلة , أو كل اسم في سطر، مع دعم الترقيم مثل 1- اسم.',
   recordMemberNotFound: (name) => `⚠️ لا يوجد سجل للعضوة *${name}* داخل السجل المحدد.`,
   closeSeriesNeedsNoActiveSession: '⚠️ لا يمكن إغلاق السلسلة أثناء وجود حلقة نشطة. أنهِ الحلقة أولاً بـ /endsession.',
   closeSeriesDone: (from, to) => `✅ تم إغلاق السلسلة ${from} وبدء السلسلة ${to}.`,
@@ -72,6 +73,7 @@ const TEXT = {
   confirmCancelled: '✅ تم إلغاء الإجراء.',
   confirmButton: '✅ تأكيد التنفيذ',
   cancelButton: '↩️ إلغاء',
+  sortedNamesHeader: (n) => `🔤 الأسماء بعد الترتيب (${n}):`,
   emptyMembers: '📋 *القائمة فارغة*\nاستخدم الزر أدناه لإضافة أعضاء.',
   addMemberButton: '➕ إضافة عضوة جديد',
   refreshButton: '🔄 تحديث',
@@ -124,6 +126,7 @@ const TEXT = {
         `/status – ملخص حضور الحلقة الحالية\n` +
         `/members – إدارة قائمة الأعضاء (إضافة / حذف / تعديل)\n` +
         `/registerinfo – إرسال توضيح طريقة التسجيل للأعضاء\n` +
+        `/sortnames [أسماء] – ترتيب قائمة أسماء أبجدياً\n` +
         `/addmember [معرّف] | [اسم] – إضافة عضو بمعرّف تيليغرام\n` +
         `/removemember [اسم] – حذف سريع\n` +
         `/renamemember [قديم] | [جديد] – تعديل اسم عضو\n` +
@@ -365,6 +368,30 @@ bot.command('registerinfo', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
 
   ctx.replyWithMarkdown(TEXT.registerInfo);
+});
+
+// ─── /sortnames ───────────────────────────────────────────────────────────────
+bot.command('sortnames', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+
+  const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!raw) return ctx.reply(TEXT.invalidSortNamesFormat);
+  const hadNumbering = /^\s*[\d٠-٩]+\s*[-.)]\s*/m.test(raw);
+  const numberingSep = (raw.match(/^\s*[\d٠-٩]+\s*([-.)])\s*/m) || [])[1] || '-';
+
+  // Accept pipe/comma/newline separators; mixed usage is supported.
+  const names = raw
+    .split(/\s*[|,\n]\s*/)
+    .map((s) => s.replace(/^\s*[\d٠-٩]+\s*[-.)]\s*/, '').trim())
+    .filter(Boolean);
+
+  if (!names.length) return ctx.reply(TEXT.invalidSortNamesFormat);
+
+  const sorted = sortArabic(names);
+  const out = hadNumbering
+    ? sorted.map((name, i) => `${i + 1}${numberingSep} ${name}`).join('\n')
+    : sorted.join('\n');
+  return ctx.reply(`${TEXT.sortedNamesHeader(sorted.length)}\n${out}`);
 });
 
 // ─── /status ──────────────────────────────────────────────────────────────────

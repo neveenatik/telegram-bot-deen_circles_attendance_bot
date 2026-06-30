@@ -10,6 +10,7 @@ const commands = [
   { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
   { command: 'members', description: 'إدارة قائمة الأعضاء (للمشرف)' },
   { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
+  { command: 'sortnames', description: 'ترتيب قائمة أسماء أبجدياً (للمشرف)' },
   { command: 'addmember', description: 'إضافة عضو (للمشرف)' },
   { command: 'removemember', description: 'حذف عضو (للمشرف)' },
   { command: 'renamemember', description: 'تعديل اسم عضو (للمشرف)' },
