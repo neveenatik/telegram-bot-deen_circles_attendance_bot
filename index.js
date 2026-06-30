@@ -54,8 +54,8 @@ const TEXT = {
   memberOptionsHeader: (name) => `🔧 *إدارة العضو:*\n${name}`,
   managePickHeader: (name, e) => `⚙️ *تعديل حالة:* ${name}\nالحالة الحالية: ${e}\n\nاختر الحالة الجديدة:`,
   renamePrompt: (name) => `✏️ اكتب الاسم الجديد بدلاً من *${name}*:`,
-  myIdInfo: (displayName, id) => `🪪 بيانات الحساب:\n\`${displayName} - ${id}\`\n\nستقوم المشرفة بإضافتك إلى قائمة المسجلات.`,
-  registerInfo: `📢 *طريقة التسجيل:*\n\n1. اكتبي /myid داخل المجموعة التي يوجد فيها البوت.\n2. ستقوم المشرفة بإضافتك إلى قائمة المسجلات بعد ظهور معرّفك.`,
+  myIdInfo: (displayName, id) => `🪪 بيانات الحساب (جاهزة للنسخ):\n\`${id} | ${displayName}\`\n\nأرسلي هذا السطر للمشرفة لإضافتك مباشرة.`,
+  registerInfo: `📢 *طريقة التسجيل:*\n\n1. اكتبي /myid داخل المجموعة التي يوجد فيها البوت.\n2. انسخي السطر الذي يظهر بصيغة: \`[معرّف تيليغرام] | [الاسم]\`\n3. أرسليه للمشرفة ليتم إضافتك إلى قائمة المسجلات.`,
   statusNoSession: (n) => `📊 لا توجد حلقة نشطة حالياً.\nالأعضاء المسجّلون: ${n}`,
   statusReport: (c, total) => `📊 *حلقة: ${c.name}*\n✅ حاضرة: ${c.present}\n👂 مستمعة: ${c.listening}\n🔔 معتذرة: ${c.excused}\n⏳ لم تسجّل: ${c.pending}\n👥 الإجمالي: ${total}`,
   memberExists: (name) => `ℹ️ *${name}* موجود بالفعل.`,
@@ -72,6 +72,7 @@ const TEXT = {
   statusSet: (name, a) => `✅ ${name} ← ${a}`,
   inlinePromptAdd: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | أحمد محمد',
   inlineInvalidAddFormat: '⚠️ الصيغة الصحيحة:\n[معرّف تيليغرام] | [الاسم]\nمثال: 123456789 | أحمد محمد',
+  replyToPromptOnly: '↩️ من فضلك اكتب الرد على رسالة الإدخال نفسها.',
   report: (session, groups) => {
     let r = `📊 *تقرير حلقة "${session.name}":*\n\n`;
     if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
@@ -129,7 +130,10 @@ const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 // ─── ① SESSION WIDGET ─────────────────────────────────────────────────────────
 function sessionText(session, master) {
   const names = sortArabic(master.members.map(m => m.name));
-  let t = `${TEXT.sessionHeader(session.name)}\n${'━'.repeat(22)}\n`;
+  const header = typeof TEXT.sessionHeader === 'function'
+    ? TEXT.sessionHeader(session.name)
+    : `📚 *حلقة: ${session.name}*`;
+  let t = `${header}\n${'━'.repeat(22)}\n`;
   for (const name of names) {
     const key = session.attendance[name] || null;
     const { e, a } = st(key);
@@ -498,10 +502,32 @@ bot.action(/^mb:ren:(\d+)$/, async (ctx) => {
   const name   = sorted[i];
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
 
-  const msgId = ctx.callbackQuery.message.message_id;
-  await setAwaiting(String(ctx.from.id), { action: 'rename', chatId: ctx.chat.id, msgId, oldName: name });
   await ctx.answerCbQuery();
-  ctx.reply(TEXT.renamePrompt(name), { parse_mode: 'Markdown' });
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(String(ctx.from.id), {
+    action: 'rename',
+    chatId: ctx.chat.id,
+    msgId,
+    oldName: name,
+    promptMsgId: null,
+    awaitingPrompt: true,
+  });
+  const prompt = await ctx.reply(TEXT.renamePrompt(name), {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: 'الاسم الجديد',
+      selective: true,
+    },
+  });
+  await setAwaiting(String(ctx.from.id), {
+    action: 'rename',
+    chatId: ctx.chat.id,
+    msgId,
+    oldName: name,
+    promptMsgId: prompt.message_id,
+    awaitingPrompt: false,
+  });
 });
 
 // ─── Members widget: back to list ─────────────────────────────────────────────
@@ -518,10 +544,29 @@ bot.action('mb:add', async (ctx) => {
   if (!await isAdmin(ctx))
     return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
 
-  const msgId = ctx.callbackQuery.message.message_id;
-  await setAwaiting(String(ctx.from.id), { action: 'add', chatId: ctx.chat.id, msgId });
   await ctx.answerCbQuery();
-  ctx.reply(TEXT.inlinePromptAdd);
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(String(ctx.from.id), {
+    action: 'add',
+    chatId: ctx.chat.id,
+    msgId,
+    promptMsgId: null,
+    awaitingPrompt: true,
+  });
+  const prompt = await ctx.reply(TEXT.inlinePromptAdd, {
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: '123456789 | أحمد محمد',
+      selective: true,
+    },
+  });
+  await setAwaiting(String(ctx.from.id), {
+    action: 'add',
+    chatId: ctx.chat.id,
+    msgId,
+    promptMsgId: prompt.message_id,
+    awaitingPrompt: false,
+  });
 });
 
 // ─── Attendance widget: member records own status ─────────────────────────────
@@ -639,6 +684,16 @@ bot.on('text', async (ctx) => {
   const uid     = String(ctx.from.id);
   const pending = await getAwaiting(uid);
   if (!pending) return;
+
+  if (pending.awaitingPrompt && !pending.promptMsgId) {
+    return ctx.reply('⏳ جاري تجهيز رسالة الإدخال، من فضلك انتظري لحظة ثم أرسلي الرد على الرسالة نفسها.');
+  }
+
+  if (pending.promptMsgId) {
+    const replyId = ctx.message.reply_to_message?.message_id;
+    if (replyId !== pending.promptMsgId)
+      return ctx.reply(TEXT.replyToPromptOnly);
+  }
 
   await delAwaiting(uid);
   const input = ctx.message.text.trim();
