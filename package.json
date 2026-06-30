@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node index.js",
     "set-webhook": "node scripts/set-webhook.js",
-    "set-commands": "node scripts/set-commands.js"
+    "set-commands": "node scripts/set-commands.js",
+    "clear-kv:check": "node scripts/clear-kv.js",
+    "clear-kv": "node scripts/clear-kv.js --yes"
   },
   "keywords": [],
   "author": "",
