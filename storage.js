@@ -2,11 +2,12 @@ const fs   = require('fs');
 const path = require('path');
 
 // ─── Local file backend (dev / fallback) ──────────────────────────────────────
-const DATA_DIR      = path.join(__dirname, 'data');
-const MASTER_FILE   = path.join(DATA_DIR, 'masterList.json');
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
-const CURRENT_FILE  = path.join(DATA_DIR, 'currentSession.json');
-const AWAIT_FILE    = path.join(DATA_DIR, 'awaiting.json');
+const DATA_DIR           = path.join(__dirname, 'data');
+const MASTER_FILE        = path.join(DATA_DIR, 'masterList.json');
+const SESSIONS_FILE      = path.join(DATA_DIR, 'sessions.json');
+const CURRENT_FILE       = path.join(DATA_DIR, 'currentSession.json');
+const AWAIT_FILE         = path.join(DATA_DIR, 'awaiting.json');
+const PAGE_PROGRESS_FILE = path.join(DATA_DIR, 'pageProgress.json');
 
 const readJSON  = (f)    => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
@@ -112,6 +113,17 @@ const fileBackend = {
     all[gid] = byGroup;
     writeJSON(AWAIT_FILE, all);
   },
+  getPageProgress: async (groupId) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(PAGE_PROGRESS_FILE);
+    return all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+  },
+  savePageProgress: async (groupId, data) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(PAGE_PROGRESS_FILE);
+    all[gid] = data;
+    writeJSON(PAGE_PROGRESS_FILE, all);
+  },
 };
 
 // ─── Supabase backend (production) ─────────────────────────────────────────────
@@ -189,6 +201,14 @@ function supabaseBackend() {
     delAwaiting:    async (groupId, uid)    => {
       const gid = normalizeGroupId(groupId);
       await set(`await:${gid}:${uid}`, null);
+    },
+    getPageProgress: async (groupId) => {
+      const gid = normalizeGroupId(groupId);
+      return (await get(`pageprogress:${gid}`)) || {};
+    },
+    savePageProgress: async (groupId, data) => {
+      const gid = normalizeGroupId(groupId);
+      await set(`pageprogress:${gid}`, data);
     },
   };
 }

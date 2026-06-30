@@ -6,6 +6,7 @@ const {
   getMaster, saveMaster, getSession, saveSession, clearSession, archiveSession,
   getSessions, saveSessions, getCurrentSeries, saveCurrentSeries,
   getAwaiting, setAwaiting, delAwaiting,
+  getPageProgress, savePageProgress,
 } = require('./storage');
 
 // ─── Guards & utils ───────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const TEXT = {
   invalidAddFormat: '⚠️ الصيغة الصحيحة:\n/addstudent [معرّف المستخدم] | [الاسم]\nمثال: /addstudent 123456789 | فاطمة محمد',
   invalidRenameFormat: '⚠️ مثال:\n/renamestudent الاسم القديم | الاسم الجديد',
   invalidStartFormat: '⚠️ مثال: /startlist اجتماع يونيو',
+  invalidPageListFormat: '⚠️ مثال: /startpagelist جلسة قراءة يونيو',
   invalidRemoveFormat: '⚠️ مثال: /removestudent فاطمة محمد',
   invalidUserId: '⚠️ معرّف المستخدم يجب أن يكون رقماً صحيحاً.',
   emptyInput: '⚠️ الإدخال لا يمكن أن يكون فارغاً.',
@@ -49,6 +51,9 @@ const TEXT = {
   genericError: '⚠️ حدث خطأ. يرجى المحاولة لاحقاً.',
   sessionEnded: '_✅ الحلقة منتهية_',
   sessionJoinPrompt: '_سجّل حضورك باستخدام الأزرار أدناه:_',
+  pageListJoinPrompt: '_سجّلي حضورك لتحصلي على صفحتكِ تلقائياً:_',
+  pageAssigned: (name, page) => `✅ ${name} — صفحة ${page}`,
+  alreadyHasPage: (page) => `ℹ️ لديكِ بالفعل صفحة ${page} في هذه الجلسة.`,
   sessionRegistrationClosed: '_⛔ تم إيقاف تسجيل الحضور حالياً من قبل المشرف._',
   registrationStopped: '✅ تم إيقاف تسجيل الحضور. لن يتمكن الأعضاء من تغيير حالتهم الآن.',
   registrationAlreadyStopped: 'ℹ️ تسجيل الحضور متوقف بالفعل.',
@@ -110,12 +115,25 @@ const TEXT = {
   addGuestPrompt: '📝 اكتب اسم الضيفة لإضافتها إلى هذه القائمة:',
   guestExistsInSession: (name) => `⚠️ الاسم *${name}* موجود بالفعل في هذه القائمة.`,
   guestAddedToSession: (name) => `✅ تمت إضافة الضيفة *${name}* إلى القائمة الحالية.`,
+  editPagePrompt: (name) => `📄 أدخلي رقم الصفحة الجديدة لـ *${name}* (1-604):`,
+  invalidPageNumber: '⚠️ رقم الصفحة يجب أن يكون عدداً صحيحاً بين 1 و 604.',
+  pageEditedSuccess: (name, page) => `✅ تم تعديل صفحة *${name}* إلى ص${page}.`,
   report: (session, groups) => {
     let r = `📊 *تقرير قائمة "${session.name}":*\n\n`;
     if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
     if (groups.listening.length) r += `👂 *مستمعة فقط (${groups.listening.length}):*\n${groups.listening.join('\n')}\n\n`;
     if (groups.excused.length)   r += `🔔 *معتذرة (${groups.excused.length}):*\n${groups.excused.join('\n')}\n\n`;
     if (groups.absent.length)    r += `❌ *غياب (${groups.absent.length}):*\n${groups.absent.join('\n')}`;
+    return r;
+  },
+  pageListReport: (session) => {
+    const pages = session.pages || {};
+    const entries = Object.entries(pages)
+      .filter(([, p]) => p)
+      .sort((a, b) => a[1] - b[1]);
+    if (!entries.length) return `📖 *تقرير قائمة "${session.name}":*\n\nلم يُسجّل أحد.`;
+    let r = `📖 *تقرير قائمة "${session.name}" (${entries.length} طالبة):*\n\n`;
+    r += entries.map(([name, page]) => `📄 ص${page} — ${name}`).join('\n');
     return r;
   },
   help: (admin) =>
@@ -134,6 +152,7 @@ const TEXT = {
         `/renamestudent [قديم] | [جديد] – تعديل اسم الطالبة\n` +
         `/startlist [اسم الحلقة] – بدء قائمة مفتوحة لأي طالبة\n` +
         `/startregisteredlist [اسم الحلقة] – بدء قائمة لمجموعة الطالبات الخاصة\n` +
+        `/startpagelist [اسم] أو [اسم] | [رقم الصفحة] – بدء قائمة قراءة مفتوحة وتوزيع الصفحات تلقائياً\n` +
         `/stopregistration – إيقاف تسجيل الحضور في القائمة\n` +
         `/newclass – مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)\n` +
         `/classhistory – عرض سجلات الدورة الحالية مع رقم كل حلقة\n` +
@@ -162,6 +181,7 @@ const TEXT = {
     excused: '🔔 معتذرة',
     absent: '❌ غياب',
     addGuest: '➕ إضافة ضيفة',
+    editPage: '📄 تعديل الصفحة',
     hide: '🙈 إخفاء',
     markCalling: '👉 جاري الرد',
     markResponded: '✅ حاضرة',
@@ -256,15 +276,28 @@ function sessionText(session, master) {
     ? TEXT.sessionHeader(session.name)
     : `📚 *قائمة: ${session.name}*`;
   let t = `${header}\n\n`;
+
   for (const name of names) {
     const key = session.attendance[name] || null;
     const { e, a } = st(key);
     const callMark = calledIcon(calledState(session, name));
-    t += key ? `${e} ${callMark}${name} – ${a}\n` : `${e} ${callMark}${name}\n`;
+    if (session.pageList) {
+      const page = session.pages?.[name];
+      if (page) {
+        t += `${e} ${callMark}${name} – ص${page}\n`;
+      } else {
+        t += `${e} ${callMark}${name}\n`;
+      }
+    } else {
+      t += key ? `${e} ${callMark}${name} – ${a}\n` : `${e} ${callMark}${name}\n`;
+    }
   }
+
   t += `\n`;
   t += session.active
-    ? (session.registrationOpen === false ? TEXT.sessionRegistrationClosed : TEXT.sessionJoinPrompt)
+    ? (session.registrationOpen === false
+        ? TEXT.sessionRegistrationClosed
+        : session.pageList ? TEXT.pageListJoinPrompt : TEXT.sessionJoinPrompt)
     : TEXT.sessionEnded;
   return t;
 }
@@ -272,9 +305,9 @@ function sessionText(session, master) {
 const sessionKb = (active, registrationOpen = true) =>
   active && registrationOpen
     ? Markup.inlineKeyboard([[
-        Markup.button.callback(TEXT.statusButtons.present, 'a:present'),
+        Markup.button.callback(TEXT.statusButtons.present,   'a:present'),
         Markup.button.callback(TEXT.statusButtons.listening, 'a:listening'),
-        Markup.button.callback(TEXT.statusButtons.excused, 'a:excused'),
+        Markup.button.callback(TEXT.statusButtons.excused,   'a:excused'),
       ]])
     : Markup.inlineKeyboard([]);
 
@@ -558,6 +591,41 @@ async function startSession(ctx, openRegistration) {
 bot.command('startlist',           (ctx) => startSession(ctx, true));  // any member (default)
 bot.command('startregisteredlist', (ctx) => startSession(ctx, false)); // registered only
 
+// ─── /startpagelist ──────────────────────────────────────────────────────────
+bot.command('startpagelist', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
+  const groupId = groupIdFromCtx(ctx);
+  if (await getSession(groupId)) return ctx.reply(TEXT.sessionAlreadyActive);
+
+  const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!name) return ctx.reply(TEXT.invalidPageListFormat);
+
+  const master = await getMaster(groupId);
+  const currentSeries = await getCurrentSeries(groupId);
+
+  const session = {
+    name,
+    startedAt: new Date().toISOString(),
+    startedBy: ctx.from.id,
+    seriesId: currentSeries,
+    chatId: ctx.chat.id,
+    messageId: null,
+    active: true,
+    registrationOpen: true,
+    openRegistration: true,
+    pageList: true,
+    pages: {},
+    attendance: {},
+    called: {},
+  };
+
+  const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true, true));
+  session.messageId = sent.message_id;
+  await saveSession(groupId, session);
+
+  try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
+});
+
 // ─── /stopregistration ───────────────────────────────────────────────────────
 bot.command('stopregistration', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
@@ -716,6 +784,15 @@ async function stopListCommand(ctx) {
   await archiveSession(groupId, session);
   await clearSession(groupId);
 
+  // Save page progress for page list sessions
+  if (session.pageList && session.pages) {
+    const progress = await getPageProgress(groupId);
+    for (const [name, page] of Object.entries(session.pages)) {
+      if (page && Number.isInteger(page)) progress[name] = page;
+    }
+    await savePageProgress(groupId, progress);
+  }
+
   const groups = { present: [], listening: [], excused: [], absent: [] };
   const reportNames = sessionNames(session, master);
   for (const n of reportNames) {
@@ -723,7 +800,11 @@ async function stopListCommand(ctx) {
     (groups[k] || groups.absent).push(n);
   }
 
-  ctx.replyWithMarkdown(TEXT.report(session, groups));
+  if (session.pageList) {
+    ctx.replyWithMarkdown(TEXT.pageListReport(session));
+  } else {
+    ctx.replyWithMarkdown(TEXT.report(session, groups));
+  }
 }
 
 bot.command('stoplist', stopListCommand);
@@ -914,16 +995,40 @@ bot.action(/^a:(present|listening|excused)$/, async (ctx) => {
     master.members.push({ userId: uid, name });
     await saveMaster(groupId, master);
     session.attendance[name] = ctx.match[1];
+    // Assign page from memory for page list sessions
+    if (session.pageList) {
+      if (session.pages[name] !== undefined && session.pages[name] !== null) {
+        return ctx.answerCbQuery(TEXT.alreadyHasPage(session.pages[name]), { show_alert: true });
+      }
+      const progress = await getPageProgress(groupId);
+      session.pages[name] = (progress[name] || 0) + 1;
+    }
     await saveSession(groupId, session);
     await refreshSessionWidget(bot.telegram, session, master);
-    return ctx.answerCbQuery(TEXT.registeredSelf(st(ctx.match[1]).a));
+    const toast = session.pageList
+      ? TEXT.pageAssigned(name, session.pages[name])
+      : TEXT.registeredSelf(st(ctx.match[1]).a);
+    return ctx.answerCbQuery(toast, { show_alert: !!session.pageList });
   }
 
   const newStatus = ctx.match[1];
   session.attendance[member.name] = newStatus;
+  // Assign page from memory for page list sessions
+  if (session.pageList) {
+    if (session.pages[member.name] !== undefined && session.pages[member.name] !== null) {
+      await saveSession(groupId, session);
+      await refreshSessionWidget(bot.telegram, session, master);
+      return ctx.answerCbQuery(TEXT.alreadyHasPage(session.pages[member.name]), { show_alert: true });
+    }
+    const progress = await getPageProgress(groupId);
+    session.pages[member.name] = (progress[member.name] || 0) + 1;
+  }
   await saveSession(groupId, session);
   await refreshSessionWidget(bot.telegram, session, master);
-  ctx.answerCbQuery(TEXT.registeredAs(st(newStatus).a));
+  const toast = session.pageList
+    ? TEXT.pageAssigned(member.name, session.pages[member.name])
+    : TEXT.registeredAs(st(newStatus).a);
+  ctx.answerCbQuery(toast, { show_alert: !!session.pageList });
 });
 
 // ─── Session manage: pick member to override ──────────────────────────────────
@@ -944,31 +1049,40 @@ bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
   const { e } = st(session.attendance[name] || null);
   const callState = calledState(session, name);
 
+  const buttons = [
+    [
+      Markup.button.callback(TEXT.manageButtons.present,   `sm:set:${i}:present`),
+      Markup.button.callback(TEXT.manageButtons.listening, `sm:set:${i}:listening`),
+    ],
+    [
+      Markup.button.callback(TEXT.manageButtons.excused, `sm:set:${i}:excused`),
+      Markup.button.callback(TEXT.manageButtons.absent,  `sm:set:${i}:absent`),
+    ],
+    [
+      Markup.button.callback(TEXT.manageButtons.markCalling, `sm:call:${i}:responding`),
+      Markup.button.callback(TEXT.manageButtons.markResponded, `sm:call:${i}:responded`),
+    ],
+    [
+      Markup.button.callback(TEXT.manageButtons.markAway, `sm:call:${i}:away`),
+    ],
+    [
+      Markup.button.callback(TEXT.manageButtons.clearCalled, `sm:call:${i}:clear`),
+    ],
+  ];
+
+  if (session.pageList) {
+    buttons.push([
+      Markup.button.callback(TEXT.manageButtons.editPage, `sm:editpage:${i}`),
+    ]);
+  }
+
+  buttons.push([Markup.button.callback(TEXT.manageButtons.back, 'sm:back')]);
+
   await ctx.editMessageText(
     TEXT.managePickHeader(name, e, callState),
     {
       parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback(TEXT.manageButtons.present,   `sm:set:${i}:present`),
-          Markup.button.callback(TEXT.manageButtons.listening, `sm:set:${i}:listening`),
-        ],
-        [
-          Markup.button.callback(TEXT.manageButtons.excused, `sm:set:${i}:excused`),
-          Markup.button.callback(TEXT.manageButtons.absent,  `sm:set:${i}:absent`),
-        ],
-        [
-          Markup.button.callback(TEXT.manageButtons.markCalling, `sm:call:${i}:responding`),
-          Markup.button.callback(TEXT.manageButtons.markResponded, `sm:call:${i}:responded`),
-        ],
-        [
-          Markup.button.callback(TEXT.manageButtons.markAway, `sm:call:${i}:away`),
-        ],
-        [
-          Markup.button.callback(TEXT.manageButtons.clearCalled, `sm:call:${i}:clear`),
-        ],
-        [Markup.button.callback(TEXT.manageButtons.back, 'sm:back')],
-      ]),
+      ...Markup.inlineKeyboard(buttons),
     }
   );
   ctx.answerCbQuery();
@@ -1026,6 +1140,51 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
 
   await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(TEXT.statusSet(name, st(status).a));
+});
+
+// ─── Session manage: edit page prompt ─────────────────────────────────────────
+bot.action(/^sm:editpage:(\d+)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const groupId = groupIdFromCtx(ctx);
+  const session = await getSession(groupId);
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+
+  const master = await getMaster(groupId);
+  const names  = sessionNames(session, master);
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = names[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+
+  await ctx.answerCbQuery();
+  const msgId = ctx.callbackQuery.message.message_id;
+  await setAwaiting(groupId, String(ctx.from.id), {
+    action: 'editPage',
+    chatId: ctx.chat.id,
+    msgId,
+    memberName: name,
+    memberIndex: i,
+    promptMsgId: null,
+    awaitingPrompt: true,
+  });
+  const prompt = await ctx.reply(TEXT.editPagePrompt(name), {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: 'الرقم',
+      selective: true,
+    },
+  });
+  await setAwaiting(groupId, String(ctx.from.id), {
+    action: 'editPage',
+    chatId: ctx.chat.id,
+    msgId,
+    memberName: name,
+    memberIndex: i,
+    promptMsgId: prompt.message_id,
+    awaitingPrompt: false,
+  });
 });
 
 // ─── Session manage: back / refresh ───────────────────────────────────────────
@@ -1207,6 +1366,30 @@ bot.on('text', async (ctx) => {
       { parse_mode: 'Markdown', ...manageKb(session, master) }
     ).catch(() => {});
     return ctx.reply(TEXT.guestAddedToSession(newName), { parse_mode: 'Markdown' });
+  }
+
+  if (pending.action === 'editPage') {
+    const { memberName } = pending;
+    const pageStr = input.trim();
+    const page = parseInt(pageStr, 10);
+
+    if (isNaN(page) || page < 1 || page > 604)
+      return ctx.reply(TEXT.invalidPageNumber);
+
+    const session = await getSession(groupId);
+    if (!session) return ctx.reply(TEXT.noSessionActive);
+    if (!session.pages) session.pages = {};
+
+    session.pages[memberName] = page;
+    await saveSession(groupId, session);
+
+    await refreshSessionWidget(bot.telegram, session, master);
+    bot.telegram.editMessageText(
+      pending.chatId, pending.msgId, undefined,
+      manageText(session, master),
+      { parse_mode: 'Markdown', ...manageKb(session, master) }
+    ).catch(() => {});
+    return ctx.reply(TEXT.pageEditedSuccess(memberName, page), { parse_mode: 'Markdown' });
   }
 });
 
