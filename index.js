@@ -36,15 +36,15 @@ const sortArabic = (arr) =>
 const TEXT = {
   adminOnly: '⛔ هذا الأمر متاح للمشرفين فقط.',
   creatorOnly: '⛔ هذا الأمر متاح لمنشئ المجموعة فقط.',
-  noSessionActive: '⚠️ لا توجد حلقة نشطة.',
-  sessionAlreadyActive: '⚠️ توجد حلقة نشطة بالفعل. أنهِها أولاً بـ /endsession',
+  noSessionActive: '⚠️ لا توجد قائمة نشطة.',
+  sessionAlreadyActive: '⚠️ توجد قائمة نشطة بالفعل. أنهِها أولاً بـ /stoplist',
   memberNotFound: '⚠️ العضو غير موجود.',
-  invalidAddFormat: '⚠️ الصيغة الصحيحة:\n/addmember [معرّف المستخدم] | [الاسم]\nمثال: /addmember 123456789 | أحمد محمد',
-  invalidRenameFormat: '⚠️ مثال:\n/renamemember الاسم القديم | الاسم الجديد',
-  invalidStartFormat: '⚠️ مثال: /startsession اجتماع يونيو',
-  invalidRemoveFormat: '⚠️ مثال: /removemember أحمد محمد',
+  invalidAddFormat: '⚠️ الصيغة الصحيحة:\n/addstudent [معرّف المستخدم] | [الاسم]\nمثال: /addstudent 123456789 | فاطمة محمد',
+  invalidRenameFormat: '⚠️ مثال:\n/renamestudent الاسم القديم | الاسم الجديد',
+  invalidStartFormat: '⚠️ مثال: /startlist اجتماع يونيو',
+  invalidRemoveFormat: '⚠️ مثال: /removestudent فاطمة محمد',
   invalidUserId: '⚠️ معرّف المستخدم يجب أن يكون رقماً صحيحاً.',
-  registrationPrompt: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | أحمد محمد',
+  registrationPrompt: '📝 أرسل معرّف المستخدم والاسم بالصيغة:\n[معرّف تيليغرام] | [الاسم]\n\nمثال: 123456789 | فاطمة محمد',
   emptyInput: '⚠️ الإدخال لا يمكن أن يكون فارغاً.',
   needRegistration: '⚠️ لم تُسجّل اسمك بعد.\nأرسل /register [اسمك] أولاً.',
   genericError: '⚠️ حدث خطأ. يرجى المحاولة لاحقاً.',
@@ -57,14 +57,13 @@ const TEXT = {
   noSeriesRecords: (s) => `⚠️ لا توجد سجلات في السلسلة الحالية (${s}).`,
   recordsHeader: (s, n) => `🗂️ سجلات السلسلة ${s} (${n})`,
   recordsLine: (i, s) => `#${i} | ${s.name} | ${new Date(s.endedAt || s.startedAt).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
-  invalidRecordIndex: '⚠️ رقم السجل غير صالح. استخدمي /records لمعرفة الأرقام.',
-  invalidRemoveMemberRecordFormat: '⚠️ الصيغة الصحيحة:\n/removememberrecord [رقم السجل] | [اسم العضوة]',
+  invalidRecordIndex: '⚠️ رقم السجل غير صالح. استخدمي /classhistory لمعرفة الأرقام.',
+  invalidRemoveMemberRecordFormat: '⚠️ الصيغة الصحيحة:\n/removestudentrecord [رقم السجل] | [اسم العضوة]',
   invalidSortNamesFormat: '⚠️ الصيغة الصحيحة:\n/sortnames اسم1 | اسم2 | اسم3\nويمكن أيضاً استخدام الفاصلة , أو كل اسم في سطر، مع دعم الترقيم مثل 1- اسم.',
   recordMemberNotFound: (name) => `⚠️ لا يوجد سجل للعضوة *${name}* داخل السجل المحدد.`,
-  closeSeriesNeedsNoActiveSession: '⚠️ لا يمكن إغلاق السلسلة أثناء وجود حلقة نشطة. أنهِ الحلقة أولاً بـ /endsession.',
+  closeSeriesNeedsNoActiveSession: '⚠️ لا يمكن إغلاق السلسلة أثناء وجود قائمة نشطة. أنهِ القائمة أولاً بـ /stoplist.',
   closeSeriesDone: (from, to) => `✅ تم إغلاق السلسلة ${from} وبدء السلسلة ${to}.`,
   recordDeleted: (i) => `✅ تم حذف السجل #${i}.`,
-  allRecordsDeleted: '✅ تم حذف جميع سجلات الحلقات المؤرشفة.',
   memberRecordDeleted: (name, i) => `✅ تم حذف سجل العضوة *${name}* من السجل #${i}.`,
   confirmPrompt: (action) => `⚠️ *تأكيد مطلوب*\n${action}\n\nاضغطي زر التأكيد أدناه.`,
   confirmNotFound: '⚠️ لا يوجد إجراء بانتظار التأكيد.',
@@ -81,7 +80,7 @@ const TEXT = {
   deleteButton: '🗑️ حذف',
   renameButton: '✏️ تعديل الاسم',
   noNameFallback: 'بدون اسم',
-  noSessionShort: '⚠️ لا توجد حلقة.',
+  noSessionShort: '⚠️ لا توجد قائمة.',
   refreshed: '✅ تم التحديث',
   registeredSelf: (a) => `✅ تمت إضافتك وتسجيلك كـ "${a}"`,
   membersHeader: (n) => `👥 *قائمة الأعضاء (${n}):*\n\n`,
@@ -91,8 +90,8 @@ const TEXT = {
   renamePrompt: (name) => `✏️ اكتب الاسم الجديد بدلاً من *${name}*:`,
   myIdInfo: (displayName, id) => `🪪 بيانات الحساب (جاهزة للنسخ):\n\`${id} | ${displayName}\`\n\nأرسلي هذا السطر للمشرفة لإضافتك مباشرة.`,
   registerInfo: `📢 *طريقة التسجيل:*\n\n1. اكتبي /myid داخل المجموعة التي يوجد فيها البوت.\n2. انسخي السطر الذي يظهر بصيغة: \`[معرّف تيليغرام] | [الاسم]\`\n3. أرسليه للمشرفة ليتم إضافتك إلى قائمة المسجلات.`,
-  statusNoSession: (n) => `📊 لا توجد حلقة نشطة حالياً.\nالأعضاء المسجّلون: ${n}`,
-  statusReport: (c, total) => `📊 *حلقة: ${c.name}*\n✅ حاضرة: ${c.present}\n👂 مستمعة: ${c.listening}\n🔔 معتذرة: ${c.excused}\n⏳ لم تسجّل: ${c.pending}\n👥 الإجمالي: ${total}`,
+  statusNoSession: (n) => `📊 لا توجد قائمة نشطة حالياً.\nالأعضاء المسجّلون: ${n}`,
+  statusReport: (c, total) => `📊 *قائمة: ${c.name}*\n✅ حاضرة: ${c.present}\n👂 مستمعة: ${c.listening}\n🔔 معتذرة: ${c.excused}\n⏳ لم تسجّل: ${c.pending}\n👥 الإجمالي: ${total}`,
   memberExists: (name) => `ℹ️ *${name}* موجود بالفعل.`,
   userIdLinked: (id) => `⚠️ المعرّف ${id} مرتبط بالفعل بعضو آخر.`,
   memberAdded: (name, id) => `✅ تمت إضافة *${name}* (معرّف: ${id}).`,
@@ -109,7 +108,7 @@ const TEXT = {
   inlineInvalidAddFormat: '⚠️ الصيغة الصحيحة:\n[معرّف تيليغرام] | [الاسم]\nمثال: 123456789 | أحمد محمد',
   replyToPromptOnly: '↩️ من فضلك اكتب الرد على رسالة الإدخال نفسها.',
   report: (session, groups) => {
-    let r = `📊 *تقرير حلقة "${session.name}":*\n\n`;
+    let r = `📊 *تقرير قائمة "${session.name}":*\n\n`;
     if (groups.present.length)   r += `✅ *حاضرة (${groups.present.length}):*\n${groups.present.join('\n')}\n\n`;
     if (groups.listening.length) r += `👂 *مستمعة فقط (${groups.listening.length}):*\n${groups.listening.join('\n')}\n\n`;
     if (groups.excused.length)   r += `🔔 *معتذرة (${groups.excused.length}):*\n${groups.excused.join('\n')}\n\n`;
@@ -124,24 +123,23 @@ const TEXT = {
     (admin
       ? `\n\n*للمشرف:*\n` +
         `/status – ملخص حضور الحلقة الحالية\n` +
-        `/members – إدارة قائمة الأعضاء (إضافة / حذف / تعديل)\n` +
-        `/registerinfo – إرسال توضيح طريقة التسجيل للأعضاء\n` +
+        `/students – إدارة قائمة طالبات المجموعة الخاصة (إضافة / حذف / تعديل)\n` +
+        `/registerinfo – إرسال توضيح طريقة التسجيل لطالبات المجموعة الخاصة\n` +
         `/sortnames [أسماء] – ترتيب قائمة أسماء أبجدياً\n` +
-        `/addmember [معرّف] | [اسم] – إضافة عضو بمعرّف تيليغرام\n` +
-        `/removemember [اسم] – حذف سريع\n` +
-        `/renamemember [قديم] | [جديد] – تعديل اسم عضو\n` +
-        `/startsession [اسم الحلقة] – بدء حلقة للمسجلات فقط\n` +
-        `/startopensession [اسم الحلقة] – بدء حلقة مفتوحة لأي عضوة\n` +
-        `/stopregistration – إيقاف تسجيل الحضور أثناء الحلقة\n` +
-        `/resetseries – إعادة تعيين السلسلة الحالية والبدء بسلسلة جديدة (لمنشئ المجموعة)\n` +
-        `/records – عرض سجلات السلسلة الحالية بالأرقام\n` +
-        `/removerecord [رقم] – حذف سجل من السلسلة الحالية (بتأكيد، لمنشئ المجموعة)\n` +
-        `/removememberrecord [رقم] | [اسم] – حذف سجل عضوة من سجل في السلسلة الحالية (بتأكيد، لمنشئ المجموعة)\n` +
-        `/clearrecords – حذف كل السجلات المؤرشفة (بتأكيد، لمنشئ المجموعة)` +
+        `/addstudent [معرّف] | [اسم] – إضافة طالبة بمعرّف تيليغرام إلى المجموعة الخاصة\n` +
+        `/removestudent [اسم] – حذف سريع\n` +
+        `/renamestudent [قديم] | [جديد] – تعديل اسم الطالبة\n` +
+        `/startlist [اسم الحلقة] – بدء قائمة مفتوحة لأي طالبة\n` +
+        `/startregisteredlist [اسم الحلقة] – بدء قائمة لمجموعة الطالبات الخاصة\n` +
+        `/stopregistration – إيقاف تسجيل الحضور في القائمة\n` +
+        `/newclass – مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)\n` +
+        `/classhistory – عرض سجلات الدورة الحالية مع رقم كل حلقة\n` +
+        `/removeclassrecord [رقم] – حذف سجل حلقة من الدورة الحالية (بتأكيد، لمنشئ المجموعة)\n` +
+        `/removestudentrecord [رقم] | [اسم] – حذف سجل طالبة من سجل في الدورة الحالية (بتأكيد، لمنشئ المجموعة)` +
         `\n` +
-        `/endsession – إنهاء الحلقة وإغلاق تسجيل الحضور\n` +
-        `/sessionmanage – تعديل حالات الحضور بشكل شخصي\n` +
-        `/history – سجل عدد مرات الحضور والاعتذار والغياب لكل عضوة`
+        `/stoplist – إنهاء الحلقة\n` +
+        `/editlist – تعديل حالات الحضور بشكل فردي\n` +
+        `/studentshistory – سجل عدد مرات الحضور والاعتذار والغياب لكل عضوة`
       : ''),
   attendance: {
     present:   { e: '✅', a: 'حاضرة' },
@@ -171,7 +169,7 @@ const TEXT = {
   historyLine: (name, p, l, x, ab) =>
     `${name}\n  ✅ ${p} حاضرة | 👂 ${l} مستمعة | 🔔 ${x} معتذرة | ❌ ${ab} غياب`,
   historyEmpty: 'لا توجد جلسات مؤرشفة بعد.',
-  sessionHeader: (name) => `📚 *حلقة: ${name}*`,
+  sessionHeader: (name) => `📚 *قائمة: ${name}*`,
 };
 const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 const calledState = (session, name) => session?.called?.[name] || null;
@@ -237,11 +235,6 @@ async function executePendingConfirm(pending) {
     return { text: TEXT.memberRecordDeleted(pending.name, pending.recordIndex), parse_mode: 'Markdown' };
   }
 
-  if (pending.action === 'clearRecords') {
-    await saveSessions([]);
-    return { text: TEXT.allRecordsDeleted };
-  }
-
   return { text: TEXT.confirmNotFound };
 }
 
@@ -250,7 +243,7 @@ function sessionText(session, master) {
   const names = sessionNames(session, master);
   const header = typeof TEXT.sessionHeader === 'function'
     ? TEXT.sessionHeader(session.name)
-    : `📚 *حلقة: ${session.name}*`;
+    : `📚 *قائمة: ${session.name}*`;
   let t = `${header}\n\n`;
   for (const name of names) {
     const key = session.attendance[name] || null;
@@ -413,15 +406,15 @@ bot.command('status', async (ctx) => {
   );
 });
 
-// ─── /members ─────────────────────────────────────────────────────────────────
-bot.command('members', async (ctx) => {
+// ─── /students ────────────────────────────────────────────────────────────────
+bot.command('students', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const master = await getMaster();
   ctx.replyWithMarkdown(membersText(master), membersKb(master));
 });
 
-// ─── /addmember ───────────────────────────────────────────────────────────────
-bot.command('addmember', async (ctx) => {
+// ─── /addstudent ──────────────────────────────────────────────────────────────
+bot.command('addstudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const args  = ctx.message.text.split(' ').slice(1).join(' ');
   const parts = args.split('|').map(s => s.trim());
@@ -452,8 +445,8 @@ bot.command('addmember', async (ctx) => {
   ctx.reply(TEXT.memberAdded(name, userId), { parse_mode: 'Markdown' });
 });
 
-// ─── /removemember ────────────────────────────────────────────────────────────
-bot.command('removemember', async (ctx) => {
+// ─── /removestudent ───────────────────────────────────────────────────────────
+bot.command('removestudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const name = ctx.message.text.split(' ').slice(1).join(' ').trim();
   if (!name) return ctx.reply(TEXT.invalidRemoveFormat);
@@ -475,8 +468,8 @@ bot.command('removemember', async (ctx) => {
   ctx.reply(TEXT.memberDeleted(name), { parse_mode: 'Markdown' });
 });
 
-// ─── /renamemember ────────────────────────────────────────────────────────────
-bot.command('renamemember', async (ctx) => {
+// ─── /renamestudent ───────────────────────────────────────────────────────────
+bot.command('renamestudent', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const args  = ctx.message.text.split(' ').slice(1).join(' ');
   const parts = args.split('|').map(s => s.trim());
@@ -505,7 +498,7 @@ bot.command('renamemember', async (ctx) => {
   ctx.reply(TEXT.memberRenamed(oldName, newName), { parse_mode: 'Markdown' });
 });
 
-// ─── /startsession & /startopensession ───────────────────────────────────────
+// ─── /startlist & /startregisteredlist ───────────────────────────────────────
 async function startSession(ctx, openRegistration) {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   if (await getSession())
@@ -541,8 +534,8 @@ async function startSession(ctx, openRegistration) {
   try { await ctx.pinChatMessage(sent.message_id, { disable_notification: true }); } catch (_) {}
 }
 
-bot.command('startsession',     (ctx) => startSession(ctx, false)); // registered only
-bot.command('startopensession', (ctx) => startSession(ctx, true));  // any member
+bot.command('startlist',           (ctx) => startSession(ctx, true));  // any member (default)
+bot.command('startregisteredlist', (ctx) => startSession(ctx, false)); // registered only
 
 // ─── /stopregistration ───────────────────────────────────────────────────────
 bot.command('stopregistration', async (ctx) => {
@@ -573,11 +566,9 @@ async function resetSeriesCommand(ctx) {
   );
 }
 
-bot.command('resetseries', resetSeriesCommand);
-// Backward-compatible alias; hidden from docs/commands.
-bot.command('closeseries', resetSeriesCommand);
+bot.command('newclass', resetSeriesCommand);
 
-bot.command('records', async (ctx) => {
+bot.command('classhistory', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const all = await getSessions();
   const currentSeries = await getCurrentSeries();
@@ -588,7 +579,7 @@ bot.command('records', async (ctx) => {
   return ctx.reply(`${TEXT.recordsHeader(currentSeries, scoped.length)}\n\n${lines.join('\n')}`);
 });
 
-bot.command('removerecord', async (ctx) => {
+bot.command('removeclassrecord', async (ctx) => {
   if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const idx = parseInt(raw, 10);
@@ -610,7 +601,7 @@ bot.command('removerecord', async (ctx) => {
   return ctx.replyWithMarkdown(TEXT.confirmPrompt(`حذف السجل #${idx}`), confirmKb(token));
 });
 
-bot.command('removememberrecord', async (ctx) => {
+bot.command('removestudentrecord', async (ctx) => {
   if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
   const raw = ctx.message.text.split(' ').slice(1).join(' ').trim();
   const parts = raw.split('|').map((s) => s.trim());
@@ -643,12 +634,6 @@ bot.command('removememberrecord', async (ctx) => {
   );
 });
 
-bot.command('clearrecords', async (ctx) => {
-  if (!await isCreator(ctx)) return ctx.reply(TEXT.creatorOnly);
-  const token = setPendingConfirm(ctx.from.id, { action: 'clearRecords' });
-  return ctx.replyWithMarkdown(TEXT.confirmPrompt('حذف جميع السجلات المؤرشفة'), confirmKb(token));
-});
-
 bot.action(/^cf:(ok|cancel):([A-Z0-9]{6})$/, async (ctx) => {
   if (!await isCreator(ctx))
     return ctx.answerCbQuery(TEXT.creatorOnly, { show_alert: true });
@@ -677,8 +662,8 @@ bot.action(/^cf:(ok|cancel):([A-Z0-9]{6})$/, async (ctx) => {
   return ctx.answerCbQuery();
 });
 
-// ─── /endsession ──────────────────────────────────────────────────────────────
-bot.command('endsession', async (ctx) => {
+// ─── /stoplist ───────────────────────────────────────────────────────────────
+async function stopListCommand(ctx) {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const session = await getSession();
   if (!session) return ctx.reply(TEXT.noSessionActive);
@@ -710,10 +695,12 @@ bot.command('endsession', async (ctx) => {
   }
 
   ctx.replyWithMarkdown(TEXT.report(session, groups));
-});
+}
 
-// ─── /sessionmanage ───────────────────────────────────────────────────────────
-bot.command('sessionmanage', async (ctx) => {
+bot.command('stoplist', stopListCommand);
+
+// ─── /editlist ────────────────────────────────────────────────────────────────
+bot.command('editlist', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const session = await getSession();
   if (!session) return ctx.reply(TEXT.noSessionActive);
@@ -721,7 +708,7 @@ bot.command('sessionmanage', async (ctx) => {
   ctx.replyWithMarkdown(manageText(session, master), manageKb(session, master));
 });
 
-bot.command('history', async (ctx) => {
+bot.command('studentshistory', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply(TEXT.adminOnly);
   const all = await getSessions();
   const currentSeries = await getCurrentSeries();
