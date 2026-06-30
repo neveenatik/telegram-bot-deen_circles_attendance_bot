@@ -16,8 +16,8 @@ const commands = [
   { command: 'renamestudent', description: 'تعديل اسم طالبة (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة مفتوحة (للمشرف)' },
   { command: 'startregisteredlist', description: 'بدء قائمة للمسجلات (للمشرف)' },
-  { command: 'startpagelist', description: 'بدء قائمة قراءة وتوزيع صفحات تلقائي (للمشرف)' },
-  { command: 'startgrouprecitation', description: 'بدء تلاوة جماعية متسلسلة (للمشرف)' },
+  { command: 'startpagelist', description: 'بدء قائمة ختمة فردية وتعيين صفحات تلقائي (للمشرف)' },
+  { command: 'startgrouprecitation', description: 'بدء ختمة جماعية مع حفظ الصفحة (للمشرف)' },
   { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
   { command: 'newclass', description: 'مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)' },
   { command: 'classhistory', description: 'عرض سجلات الدورة الحالية مع رقم كل حلقة (للمشرف)' },
@@ -36,14 +36,29 @@ const commands = [
 
   const bot = new Telegraf(process.env.BOT_TOKEN);
 
-  // Default scope (private chats)
-  await bot.telegram.setMyCommands(commands, { scope: { type: 'default' } });
+  try {
+    // Direct messages / private chats
+    await bot.telegram.setMyCommands(commands, { scope: { type: 'default' } });
+    console.log('✅ Commands registered for direct messages (default scope)');
 
-  // Group/supergroup scope so slash-menu works in groups as well.
-  await bot.telegram.setMyCommands(commands, { scope: { type: 'all_group_chats' } });
+    // All group chats (groups and supergroups)
+    await bot.telegram.setMyCommands(commands, { scope: { type: 'all_group_chats' } });
+    console.log('✅ Commands registered for all group chats');
 
-  // Arabic command menu label where supported.
-  await bot.telegram.setChatMenuButton({ menu_button: { type: 'commands' } }).catch(() => {});
+    // Group administrators
+    await bot.telegram.setMyCommands(commands, { scope: { type: 'all_chat_administrators' } });
+    console.log('✅ Commands registered for group administrators');
 
-  console.log('Telegram commands menu registered for default + all_group_chats scopes.');
+    // Arabic command menu label where supported
+    await bot.telegram.setChatMenuButton({ menu_button: { type: 'commands' } }).catch(() => {});
+    console.log('✅ Command menu button set');
+
+    console.log('\n✅ All command scopes registered successfully!');
+    console.log('   - Direct messages (default)');
+    console.log('   - All group chats');
+    console.log('   - Group administrators');
+  } catch (err) {
+    console.error('❌ Error registering commands:', err.message);
+    process.exit(1);
+  }
 })();
