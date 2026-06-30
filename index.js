@@ -177,6 +177,14 @@ async function refreshSessionWidget(telegram, session, master) {
   }
 }
 
+async function refreshManageWidget(ctx, session, master) {
+  try {
+    await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) throw e;
+  }
+}
+
 // ─── ② MEMBERS WIDGET ────────────────────────────────────────────────────────
 function membersText(master) {
   if (!master.members.length)
@@ -678,7 +686,7 @@ bot.action(/^sm:call:(\d+):(responding|responded|away|clear)$/, async (ctx) => {
   await saveSession(session);
   await refreshSessionWidget(bot.telegram, session, master);
 
-  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(
     state === 'responding' ? `👉 ${name} الآن قيد الرد.`
       : state === 'responded' ? `✅ تم تعليم ${name} بأنها حاضرة.`
@@ -706,7 +714,7 @@ bot.action(/^sm:set:(\d+):(present|listening|excused|absent)$/, async (ctx) => {
   await saveSession(session);
   await refreshSessionWidget(bot.telegram, session, master);
 
-  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(TEXT.statusSet(name, st(status).a));
 });
 
@@ -716,14 +724,14 @@ bot.action('sm:back', async (ctx) => {
   const session = await getSession();
   if (!session) return;
   const master = await getMaster();
-  ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  await refreshManageWidget(ctx, session, master);
 });
 
 bot.action('sm:refresh', async (ctx) => {
   const session = await getSession();
   if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
   const master = await getMaster();
-  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  await refreshManageWidget(ctx, session, master);
   ctx.answerCbQuery(TEXT.refreshed);
 });
 
