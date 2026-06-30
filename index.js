@@ -50,9 +50,9 @@ const TEXT = {
   refreshed: '✅ تم التحديث',
   registeredSelf: (a) => `✅ تمت إضافتك وتسجيلك كـ "${a}"`,
   membersHeader: (n) => `👥 *قائمة الأعضاء (${n}):*\n\n`,
-  manageHeader: (name) => `⚙️ *إدارة الحضور – ${name}*\n\nانقر على عضو لتعديل حالته:\n\n`,
+  manageHeader: (name) => `⚙️ *إدارة الحضور – ${name}*\n\nانقر على عضو لتعديل حالته أو علّم أنه تم النداء عليه:\n\n`,
   memberOptionsHeader: (name) => `🔧 *إدارة العضو:*\n${name}`,
-  managePickHeader: (name, e) => `⚙️ *تعديل حالة:* ${name}\nالحالة الحالية: ${e}\n\nاختر الحالة الجديدة:`,
+  managePickHeader: (name, e, called) => `⚙️ *تعديل حالة:* ${name}\nالحالة الحالية: ${e}\nحالة النداء: ${called === 'responding' ? '👉 جاري الرد' : called === 'responded' ? '✅ حاضرة' : called === 'away' ? '📣 كان بعيداً عن الميكروفون' : ''}\n\nاختر الحالة الجديدة أو حالة النداء:`,
   renamePrompt: (name) => `✏️ اكتب الاسم الجديد بدلاً من *${name}*:`,
   myIdInfo: (displayName, id) => `🪪 بيانات الحساب (جاهزة للنسخ):\n\`${id} | ${displayName}\`\n\nأرسلي هذا السطر للمشرفة لإضافتك مباشرة.`,
   registerInfo: `📢 *طريقة التسجيل:*\n\n1. اكتبي /myid داخل المجموعة التي يوجد فيها البوت.\n2. انسخي السطر الذي يظهر بصيغة: \`[معرّف تيليغرام] | [الاسم]\`\n3. أرسليه للمشرفة ليتم إضافتك إلى قائمة المسجلات.`,
@@ -116,16 +116,23 @@ const TEXT = {
     listening: '👂 مستمعة',
     excused: '🔔 معتذرة',
     absent: '❌ غياب',
+    markCalling: '👉 جاري الرد',
+    markResponded: '✅ حاضرة',
+    markAway: '📣 مبتعدة',
+    clearCalled: '↩️ إلغاء علامة النداء',
     back: '↩️ رجوع',
   },
   historyHeader: (n) =>
-    `📊 سجل الحضور (${n} جلسة)\n📅 ${new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}\n${'━'.repeat(22)}`,
+    `📊 سجل الحضور (${n} جلسة)\n📅 ${new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}\n${DIVIDER}`,
   historyLine: (name, p, l, x, ab) =>
     `${name}\n  ✅ ${p} حاضرة | 👂 ${l} مستمعة | 🔔 ${x} معتذرة | ❌ ${ab} غياب`,
   historyEmpty: 'لا توجد جلسات مؤرشفة بعد.',
   sessionHeader: (name) => `📚 *حلقة: ${name}*`,
 };
 const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
+const calledState = (session, name) => session?.called?.[name] || null;
+const calledIcon = (state) => (state === 'responding' ? '👉 ' : state === 'responded' ? '✅ ' : state === 'away' ? '📣 ' : '⏳ ');
+const DIVIDER = '━'.repeat(14);
 
 // ─── ① SESSION WIDGET ─────────────────────────────────────────────────────────
 function sessionText(session, master) {
@@ -133,13 +140,14 @@ function sessionText(session, master) {
   const header = typeof TEXT.sessionHeader === 'function'
     ? TEXT.sessionHeader(session.name)
     : `📚 *حلقة: ${session.name}*`;
-  let t = `${header}\n${'━'.repeat(22)}\n`;
+  let t = `${header}\n${DIVIDER}\n`;
   for (const name of names) {
     const key = session.attendance[name] || null;
     const { e, a } = st(key);
-    t += key ? `${e} ${name} – ${a}\n` : `${e} ${name}\n`;
+    const callMark = calledIcon(calledState(session, name));
+    t += key ? `${e} ${callMark}${name} – ${a}\n` : `${e} ${callMark}${name}\n`;
   }
-  t += `${'━'.repeat(22)}\n`;
+  t += `${DIVIDER}\n`;
   t += session.active
     ? TEXT.sessionJoinPrompt
     : TEXT.sessionEnded;
@@ -205,7 +213,8 @@ function manageText(session, master) {
   let t = TEXT.manageHeader(session.name);
   for (const name of names) {
     const { e, a } = st(session.attendance[name] || null);
-    t += `${e} ${name} – ${a}\n`;
+    const callMark = calledIcon(calledState(session, name));
+    t += `${e} ${callMark}${name} – ${a}\n`;
   }
   return t;
 }
@@ -288,6 +297,7 @@ bot.command('addmember', async (ctx) => {
   const session = await getSession();
   if (session) {
     session.attendance[name] = null;
+    if (session.called) session.called[name] = null;
     await saveSession(session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
@@ -369,6 +379,7 @@ async function startSession(ctx, openRegistration) {
     active:    true,
     openRegistration,
     attendance,
+    called: {},
   };
 
   const sent = await ctx.replyWithMarkdown(sessionText(session, master), sessionKb(true));
@@ -483,6 +494,7 @@ bot.action(/^mb:del:(\d+)$/, async (ctx) => {
   const session = await getSession();
   if (session) {
     delete session.attendance[name];
+    if (session.called) delete session.called[name];
     await saveSession(session);
     await refreshSessionWidget(bot.telegram, session, master);
   }
@@ -614,9 +626,10 @@ bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
   if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
 
   const { e } = st(session.attendance[name] || null);
+  const callState = calledState(session, name);
 
   await ctx.editMessageText(
-    TEXT.managePickHeader(name, e),
+    TEXT.managePickHeader(name, e, callState),
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
@@ -628,11 +641,50 @@ bot.action(/^sm:pick:(\d+)$/, async (ctx) => {
           Markup.button.callback(TEXT.manageButtons.excused, `sm:set:${i}:excused`),
           Markup.button.callback(TEXT.manageButtons.absent,  `sm:set:${i}:absent`),
         ],
+        [
+          Markup.button.callback(TEXT.manageButtons.markCalling, `sm:call:${i}:responding`),
+          Markup.button.callback(TEXT.manageButtons.markResponded, `sm:call:${i}:responded`),
+        ],
+        [
+          Markup.button.callback(TEXT.manageButtons.markAway, `sm:call:${i}:away`),
+        ],
+        [
+          Markup.button.callback(TEXT.manageButtons.clearCalled, `sm:call:${i}:clear`),
+        ],
         [Markup.button.callback(TEXT.manageButtons.back, 'sm:back')],
       ]),
     }
   );
   ctx.answerCbQuery();
+});
+
+// ─── Session manage: mark/unmark called member ───────────────────────────────
+bot.action(/^sm:call:(\d+):(responding|responded|away|clear)$/, async (ctx) => {
+  if (!await isAdmin(ctx))
+    return ctx.answerCbQuery(TEXT.adminOnly, { show_alert: true });
+
+  const session = await getSession();
+  if (!session) return ctx.answerCbQuery(TEXT.noSessionShort, { show_alert: true });
+
+  const master = await getMaster();
+  const names  = sortArabic(master.members.map(m => m.name));
+  const i      = parseInt(ctx.match[1], 10);
+  const name   = names[i];
+  if (!name) return ctx.answerCbQuery(TEXT.memberNotFound, { show_alert: true });
+  const state = ctx.match[2];
+
+  if (!session.called) session.called = {};
+  session.called[name] = state === 'clear' ? null : state;
+  await saveSession(session);
+  await refreshSessionWidget(bot.telegram, session, master);
+
+  await ctx.editMessageText(manageText(session, master), { parse_mode: 'Markdown', ...manageKb(session, master) });
+  ctx.answerCbQuery(
+    state === 'responding' ? `👉 ${name} الآن قيد الرد.`
+      : state === 'responded' ? `✅ تم تعليم ${name} بأنها حاضرة.`
+      : state === 'away' ? `📣 تم تعليم ${name} بأنها كانت بعيدة عن الميكروفون.`
+      : `↩️ أزيلت علامة النداء عن ${name}.`
+  );
 });
 
 // ─── Session manage: apply status ─────────────────────────────────────────────
@@ -752,6 +804,10 @@ bot.on('text', async (ctx) => {
     if (session && oldName in session.attendance) {
       session.attendance[newName] = session.attendance[oldName];
       delete session.attendance[oldName];
+      if (session.called && oldName in session.called) {
+        session.called[newName] = session.called[oldName];
+        delete session.called[oldName];
+      }
       await saveSession(session);
       await refreshSessionWidget(bot.telegram, session, master);
     }
