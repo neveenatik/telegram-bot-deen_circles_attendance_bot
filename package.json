@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "set-webhook": "node scripts/set-webhook.js"
+    "set-webhook": "node scripts/set-webhook.js",
+    "set-commands": "node scripts/set-commands.js"
   },
   "keywords": [],
   "author": "",

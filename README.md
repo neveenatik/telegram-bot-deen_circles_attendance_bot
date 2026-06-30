@@ -50,7 +50,13 @@ npm start
     - `SUPABASE_URL`
     - `SUPABASE_SERVICE_ROLE_KEY`
     - `WEBHOOK_SECRET` إذا كنت تستخدم التحقق من webhook
-7. بعد النشر، اضبط webhook عبر:
+7. بعد النشر، سجّل قائمة أوامر Telegram حتى يظهر autocomplete عند كتابة `/`:
+
+```bash
+npm run set-commands
+```
+
+8. بعد ذلك اضبط webhook عبر:
 
 ```bash
 npm run set-webhook -- https://your-project.vercel.app/api/telegram
