@@ -886,8 +886,8 @@ async function stopListCommand(ctx) {
   await archiveSession(groupId, session);
   await clearSession(groupId);
 
-  // Save page progress for page list sessions
-  if (session.pageList && session.pages) {
+  // Save page progress for all sessions with pages (page list & group recitation)
+  if ((session.pageList || session.groupRecitation) && session.pages) {
     const progress = await getPageProgress(groupId);
     for (const [name, page] of Object.entries(session.pages)) {
       if (page && Number.isInteger(page)) progress[name] = page;
@@ -896,8 +896,20 @@ async function stopListCommand(ctx) {
   }
 
   // Save next page for group recitation sessions
-  if (session.groupRecitation && session.groupRecitationStartPage) {
-    await saveGroupRecitationNextPage(groupId, session.groupRecitationStartPage);
+  // Only count pages for students who have a call status (were called/participated)
+  if (session.groupRecitation && session.pages) {
+    let maxPage = 0;
+    for (const [name, page] of Object.entries(session.pages)) {
+      const hasCallStatus = session.called && session.called[name];
+      // Only count if they have a call status (participated)
+      if (hasCallStatus) {
+        if (Number.isInteger(page) && page > maxPage) {
+          maxPage = page;
+        }
+      }
+    }
+    const nextPage = maxPage > 0 ? maxPage + 1 : 1;
+    await saveGroupRecitationNextPage(groupId, nextPage);
   }
 
   const groups = { present: [], listening: [], excused: [], absent: [] };
