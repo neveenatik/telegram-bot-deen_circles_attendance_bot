@@ -124,7 +124,7 @@ const TEXT = {
     back: '↩️ رجوع',
   },
   historyHeader: (n) =>
-    `📊 سجل الحضور (${n} جلسة)\n📅 ${new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}\n${DIVIDER}`,
+    `📊 سجل الحضور (${n} جلسة)\n📅 ${new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
   historyLine: (name, p, l, x, ab) =>
     `${name}\n  ✅ ${p} حاضرة | 👂 ${l} مستمعة | 🔔 ${x} معتذرة | ❌ ${ab} غياب`,
   historyEmpty: 'لا توجد جلسات مؤرشفة بعد.',
@@ -133,7 +133,6 @@ const TEXT = {
 const st = (key) => (key && TEXT.attendance[key]) || TEXT.attendance.pending;
 const calledState = (session, name) => session?.called?.[name] || null;
 const calledIcon = (state) => (state === 'responding' ? '👉 ' : state === 'responded' ? '✅ ' : state === 'away' ? '📣 ' : '⏳ ');
-const DIVIDER = '━'.repeat(14);
 
 // ─── ① SESSION WIDGET ─────────────────────────────────────────────────────────
 function sessionText(session, master) {
@@ -141,14 +140,14 @@ function sessionText(session, master) {
   const header = typeof TEXT.sessionHeader === 'function'
     ? TEXT.sessionHeader(session.name)
     : `📚 *حلقة: ${session.name}*`;
-  let t = `${header}\n${DIVIDER}\n`;
+  let t = `${header}\n\n`;
   for (const name of names) {
     const key = session.attendance[name] || null;
     const { e, a } = st(key);
     const callMark = calledIcon(calledState(session, name));
     t += key ? `${e} ${callMark}${name} – ${a}\n` : `${e} ${callMark}${name}\n`;
   }
-  t += `${DIVIDER}\n`;
+  t += `\n`;
   t += session.active
     ? TEXT.sessionJoinPrompt
     : TEXT.sessionEnded;
@@ -462,7 +461,7 @@ bot.command('history', async (ctx) => {
     const t = tally[name];
     return TEXT.historyLine(name, t.present, t.listening, t.excused, t.absent);
   });
-  ctx.reply(`${TEXT.historyHeader(sessions.length)}\n${lines.join('\n')}`);
+  ctx.reply(`${TEXT.historyHeader(sessions.length)}\n\n${lines.join('\n\n')}`);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
