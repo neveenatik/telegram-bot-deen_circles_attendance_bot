@@ -273,18 +273,18 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <h3>📊 السجلات والتقارير</h3>
       <div class="command">
-        <div class="cmd">/classhistory</div>
-        <div class="desc">عرض سجل جميع الجلسات في الدورة الحالية</div>
+        <div class="cmd">/classhistory [رقم الدورة]</div>
+        <div class="desc">عرض سجل الجلسات (الدورة الحالية افتراضياً، أو يمكن تحديد رقم دورة من الأرشيف: /classhistory 1)</div>
       </div>
 
       <div class="command">
-        <div class="cmd">/studentshistory</div>
-        <div class="desc">إحصائيات الحضور لكل طالبة (حاضرة/مستمعة/معتذرة/غياب)</div>
+        <div class="cmd">/studentshistory [رقم الدورة]</div>
+        <div class="desc">إحصائيات الحضور لكل طالبة (الدورة الحالية افتراضياً، أو من أرشيف السابق: /studentshistory 1)</div>
       </div>
 
       <div class="command">
         <div class="cmd">/newclass</div>
-        <div class="desc">بدء دورة جديدة (حذف سجلات الدورة السابقة)</div>
+        <div class="desc">بدء دورة جديدة (يزيد رقم الدورة، والسجلات القديمة تبقى في الأرشيف ولا تُحذف)</div>
       </div>
     </section>
 
@@ -317,7 +317,18 @@ const HTML_DOCS = `<!DOCTYPE html>
         <p>يمكن الحصول على المعرّف باستخدام: <code>/myid</code></p>
       </div>
 
-      <h3>مثال 3: ختمة فردية</h3>
+      <h3>مثال 3: الوصول إلى السجلات المؤرشفة</h3>
+      <div class="example">
+        <strong>الخطوات:</strong>
+        <ol>
+          <li>بعد استخدام <code>/newclass</code> لتبدأ دورة جديدة (الدورة 2)</li>
+          <li>للعودة إلى سجلات الدورة السابقة، استخدم: <code>/classhistory 1</code></li>
+          <li>أو لإحصائيات الطالبات في الدورة 1: <code>/studentshistory 1</code></li>
+          <li>البيانات القديمة لا تُحذف بل تُحفظ في الأرشيف</li>
+        </ol>
+      </div>
+
+      <h3>مثال 3: إضافة طالبة جديدة</h3>
       <div class="example">
         <strong>الخطوات:</strong>
         <ol>
@@ -366,9 +377,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       <ul style="margin-left: 2rem;">
         <li><strong>معرّف التيليغرام:</strong> استخدم <code>/myid</code> في أي محادثة خاصة مع البوت للحصول على معرفك</li>
         <li><strong>الترتيب التلقائي:</strong> استخدم <code>/sortnames [أسماء]</code> لترتيب القائمة أبجدياً</li>
-        <li><strong>سجلات الدورات:</strong> كل دورة لها سجلات منفصلة. استخدم <code>/newclass</code> للبدء بدورة جديدة</li>
+        <li><strong>سجلات الدورات:</strong> كل دورة لها سجلات منفصلة. استخدم <code>/newclass</code> للبدء بدورة جديدة، والبيانات القديمة تبقى في الأرشيف</li>
+        <li><strong>الوصول للأرشيف:</strong> استخدم <code>/classhistory 1</code> أو <code>/studentshistory 1</code> للوصول إلى سجلات الدورات السابقة (لا شيء يُحذف!)</li>
         <li><strong>الحفظ التلقائي:</strong> جميع البيانات تُحفظ تلقائياً عند إنهاء الجلسة</li>
         <li><strong>الصفحات:</strong> في الختمات الفردية والجماعية، يمكنك تعديل الصفحات يدوياً باستخدام <code>/editlist</code></li>
+        <li><strong>المعلمات:</strong> استخدم <code>/addteacher</code> لإضافة معلمات بأنواع مختلفة (courseteacher, trainingteacher, recitationteacher) ثم استخدم <code>/tagteachers</code> للإشارة إليهن</li>
       </ul>
     </section>
 
@@ -383,7 +396,10 @@ const HTML_DOCS = `<!DOCTYPE html>
       <p>نعم! لكل مجموعة قائمتها وسجلاتها الخاصة.</p>
 
       <h3>ماذا يحدث عند استخدام /newclass؟</h3>
-      <p>تُبدأ دورة جديدة، والسجلات القديمة تُحفظ في الأرشيف ولا تُحذف.</p>
+      <p>يتم زيادة رقم الدورة (مثلاً من 1 إلى 2)، والسجلات القديمة تبقى في الأرشيف ولا تُحذف. يمكن الوصول إليها لاحقاً باستخدام <code>/classhistory 1</code> أو <code>/studentshistory 1</code>.</p>
+
+      <h3>كيف أسترجع سجلات الدورات القديمة؟</h3>
+      <p>استخدم <code>/classhistory [رقم الدورة]</code> أو <code>/studentshistory [رقم الدورة]</code>. مثال: <code>/classhistory 1</code> يعرض جميع جلسات الدورة الأولى، و<code>/studentshistory 2</code> يعرض إحصائيات الطالبات في الدورة الثانية.</p>
 
       <h3>هل يمكن تعديل الحضور بعد إنهاء الجلسة؟</h3>
       <p>نعم، استخدم <code>/editlist</code> أثناء أي جلسة نشطة، أو استخدم <code>/removeclassrecord</code> لحذف سجل كامل وإعادة إنشاؤه.</p>
