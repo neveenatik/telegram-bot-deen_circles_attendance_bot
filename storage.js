@@ -40,59 +40,54 @@ const fileBackend = {
     all[gid] = d;
     writeJSON(MASTER_FILE, all);
   },
-  getSession:     async (groupId)  => {
+  getSession:     async (groupId, type)  => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(CURRENT_FILE);
-    return all[gid] || null;
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    return byGroup[type] || null;
   },
-  saveSession:    async (groupId, s) => {
+  saveSession:    async (groupId, type, s) => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(CURRENT_FILE);
-    all[gid] = s;
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    byGroup[type] = s;
+    all[gid] = byGroup;
     writeJSON(CURRENT_FILE, all);
   },
-  clearSession:   async (groupId)  => {
+  clearSession:   async (groupId, type)  => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(CURRENT_FILE);
-    all[gid] = null;
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    delete byGroup[type];
+    all[gid] = byGroup;
     writeJSON(CURRENT_FILE, all);
   },
-  getSessions:    async (groupId)  => {
+  getSessions:    async (groupId, type)  => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(SESSIONS_FILE);
-    const h = all[gid] || { sessions: [], currentSeries: 1 };
-    return Array.isArray(h.sessions) ? h.sessions : [];
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+    return Array.isArray(byType.sessions) ? byType.sessions : [];
   },
-  saveSessions:   async (groupId, sessions) => {
+  saveSessions:   async (groupId, type, sessions) => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(SESSIONS_FILE);
-    const h = all[gid] || { sessions: [], currentSeries: 1 };
-    h.sessions = sessions;
-    if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
-    all[gid] = h;
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+    byType.sessions = Array.isArray(sessions) ? sessions : [];
+    byGroup[type] = byType;
+    all[gid] = byGroup;
     writeJSON(SESSIONS_FILE, all);
   },
-  getCurrentSeries: async (groupId) => {
+  archiveSession: async (groupId, type, s) => {
     const gid = normalizeGroupId(groupId);
     const all = readMap(SESSIONS_FILE);
-    const h = all[gid] || { sessions: [], currentSeries: 1 };
-    return Number.isInteger(h.currentSeries) && h.currentSeries > 0 ? h.currentSeries : 1;
-  },
-  saveCurrentSeries: async (groupId, series) => {
-    const gid = normalizeGroupId(groupId);
-    const all = readMap(SESSIONS_FILE);
-    const h = all[gid] || { sessions: [], currentSeries: 1 };
-    h.currentSeries = Number.isInteger(series) && series > 0 ? series : 1;
-    all[gid] = h;
-    writeJSON(SESSIONS_FILE, all);
-  },
-  archiveSession: async (groupId, s) => {
-    const gid = normalizeGroupId(groupId);
-    const all = readMap(SESSIONS_FILE);
-    const h = all[gid] || { sessions: [], currentSeries: 1 };
-    h.sessions.push(s);
-    if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
-    all[gid] = h;
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+    if (!Array.isArray(byType.sessions)) byType.sessions = [];
+    byType.sessions.push(s);
+    byGroup[type] = byType;
+    all[gid] = byGroup;
     writeJSON(SESSIONS_FILE, all);
   },
   getAwaiting:    async (groupId, uid)    => {
@@ -165,46 +160,45 @@ async function supabaseBackend() {
       const gid = normalizeGroupId(groupId);
       await set(`master:${gid}`, d);
     },
-    getSession:     async (groupId)  => {
+    getSession:     async (groupId, type)  => {
       const gid = normalizeGroupId(groupId);
-      return (await get(`current:${gid}`)) || null;
+      const byGroup = (await get(`current:${gid}`)) || {};
+      return byGroup[type] || null;
     },
-    saveSession:    async (groupId, s) => {
+    saveSession:    async (groupId, type, s) => {
       const gid = normalizeGroupId(groupId);
-      await set(`current:${gid}`, s);
+      const byGroup = (await get(`current:${gid}`)) || {};
+      byGroup[type] = s;
+      await set(`current:${gid}`, byGroup);
     },
-    clearSession:   async (groupId)  => {
+    clearSession:   async (groupId, type)  => {
       const gid = normalizeGroupId(groupId);
-      await set(`current:${gid}`, null);
+      const byGroup = (await get(`current:${gid}`)) || {};
+      delete byGroup[type];
+      await set(`current:${gid}`, byGroup);
     },
-    getSessions:    async (groupId)  => {
+    getSessions:    async (groupId, type)  => {
       const gid = normalizeGroupId(groupId);
-      return ((await get(`sessions:${gid}`)) || { sessions: [] }).sessions;
+      const byGroup = (await get(`sessions:${gid}`)) || {};
+      const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+      return Array.isArray(byType.sessions) ? byType.sessions : [];
     },
-    saveSessions:   async (groupId, sessions) => {
+    saveSessions:   async (groupId, type, sessions) => {
       const gid = normalizeGroupId(groupId);
-      const h = (await get(`sessions:${gid}`)) || { sessions: [], currentSeries: 1 };
-      h.sessions = sessions;
-      if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
-      await set(`sessions:${gid}`, h);
+      const byGroup = (await get(`sessions:${gid}`)) || {};
+      const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+      byType.sessions = Array.isArray(sessions) ? sessions : [];
+      byGroup[type] = byType;
+      await set(`sessions:${gid}`, byGroup);
     },
-    getCurrentSeries: async (groupId) => {
+    archiveSession: async (groupId, type, s) => {
       const gid = normalizeGroupId(groupId);
-      const h = (await get(`sessions:${gid}`)) || { sessions: [], currentSeries: 1 };
-      return Number.isInteger(h.currentSeries) && h.currentSeries > 0 ? h.currentSeries : 1;
-    },
-    saveCurrentSeries: async (groupId, series) => {
-      const gid = normalizeGroupId(groupId);
-      const h = (await get(`sessions:${gid}`)) || { sessions: [], currentSeries: 1 };
-      h.currentSeries = Number.isInteger(series) && series > 0 ? series : 1;
-      await set(`sessions:${gid}`, h);
-    },
-    archiveSession: async (groupId, s) => {
-      const gid = normalizeGroupId(groupId);
-      const h = (await get(`sessions:${gid}`)) || { sessions: [], currentSeries: 1 };
-      h.sessions.push(s);
-      if (!Number.isInteger(h.currentSeries) || h.currentSeries < 1) h.currentSeries = 1;
-      await set(`sessions:${gid}`, h);
+      const byGroup = (await get(`sessions:${gid}`)) || {};
+      const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : { sessions: [] };
+      if (!Array.isArray(byType.sessions)) byType.sessions = [];
+      byType.sessions.push(s);
+      byGroup[type] = byType;
+      await set(`sessions:${gid}`, byGroup);
     },
     getAwaiting:    async (groupId, uid)    => {
       const gid = normalizeGroupId(groupId);
