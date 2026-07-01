@@ -19,6 +19,7 @@ const commands = [
   { command: 'removeteacher', description: 'حذف معلمة (للمشرف)' },
   { command: 'assignteacher', description: 'تغيير نوع المعلمة (للمشرف)' },
   { command: 'listteachers', description: 'عرض قائمة المعلمات (للمشرف)' },
+  { command: 'tagteachers', description: 'الإشارة إلى المعلمات حسب النوع للإعلان (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },
   { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية(تصحيح التلاوة) للمسجلات (للمشرف)' },
