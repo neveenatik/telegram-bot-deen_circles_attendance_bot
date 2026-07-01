@@ -112,6 +112,7 @@ npm run set-webhook -- https://your-project.vercel.app/api/telegram
 | `/tagteachers [النوع]` | الإشارة إلى المعلمات حسب النوع (courseteacher, trainingteacher, recitationteacher) (للمشرف) |
 | `/classhistory [رقم الدورة]` | عرض سجلات الدورة (الحالية افتراضياً أو من أرشيف السابقة) (للمشرف) |
 | `/studentshistory [رقم الدورة]` | عرض إحصائيات الطالبات حسب الدورة (الحالية افتراضياً أو من أرشيف السابقة) (للمشرف) |
+| `/contact [رسالتك]` | الإبلاغ عن مشاكل والاقتراحات (مجهول الهوية) |
 
 ## البنية
 

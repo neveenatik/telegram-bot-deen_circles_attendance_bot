@@ -250,7 +250,13 @@ const HTML_DOCS = `<!DOCTYPE html>
         <div class="desc">الإشارة إلى المعلمات حسب النوع (courseteacher | trainingteacher | recitationteacher)</div>
       </div>
 
-      <h3>📋 إدارة الجلسات</h3>
+      <h3>� التواصل والتقارير</h3>
+      <div class="command">
+        <div class="cmd">/contact [رسالتك]</div>
+        <div class="desc">الإبلاغ عن مشاكل تقنية أو اقتراحات (يتم الإرسال بشكل مجهول الهوية مع طابع التاريخ فقط)</div>
+      </div>
+
+      <h3>�📋 إدارة الجلسات</h3>
       <div class="command">
         <div class="cmd">/startlist [اسم]</div>
         <div class="desc">بدء جلسة حضور للطالبات المسجلات</div>
@@ -412,7 +418,17 @@ const HTML_DOCS = `<!DOCTYPE html>
     <!-- Support -->
     <section>
       <h2>🆘 الدعم والمساعدة</h2>
-      <p>إذا واجهت أي مشاكل أو لديك اقتراحات، يرجى التواصل مع مطور البوت.</p>
+      <p>إذا واجهت أي مشاكل أو لديك اقتراحات:</p>
+      <ul style="margin-left: 2rem;">
+        <li><strong>الإبلاغ عن مشاكل:</strong> استخدم الأمر <code>/contact [وصف المشكلة]</code> لإرسال تقرير مجهول الهوية</li>
+        <li><strong>أمثلة مفيدة للتقرير:</strong>
+          <ul>
+            <li><code>/contact عند استخدام /editlist، حالة الحضور لا تُحفظ</code></li>
+            <li><code>/contact /startlist لا يعرض أزرار الحضور في الرسالة</code></li>
+          </ul>
+        </li>
+        <li><strong>نصيحة:</strong> اذكر الأمر المستخدم والمشكلة والسلوك المتوقع لتسهيل حل المشكلة</li>
+      </ul>
       <p style="margin-top: 1rem; color: #999; font-size: 0.9rem;">آخر تحديث: يوليو 2026</p>
     </section>
   </div>
