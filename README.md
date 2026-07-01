@@ -44,7 +44,7 @@ npm run set-commands
 إذا أردت تشغيل البوت على Vercel بدل التشغيل المحلي، اتبع الخطوات التالية:
 
 1. أنشئ مشروعاً جديداً في Supabase.
-2. نفّذ ملف [supabase.sql](supabase.sql) داخل SQL Editor لإنشاء جدول `kv`.
+2. نفّذ ملف [supabase.sql](scripts/supabase.sql) داخل SQL Editor لإنشاء جدول `kv`.
 3. انسخ `SUPABASE_URL` من الصفحة الرئيسية للمشروع في Supabase.
 4. انسخ `SUPABASE_SERVICE_ROLE_KEY` من Settings → API → Legacy anon, service_role API keys.
 5. ارفع المشروع إلى GitHub ثم اربطه مع Vercel.
@@ -128,7 +128,8 @@ telegram-bot/
 ├── scripts/
 │   ├── set-commands.js   ← تسجيل قائمة الأوامر (تشغيل محلي، كلما تغيّرت الأوامر)
 │   ├── set-webhook.js    ← ضبط webhook على Vercel (مرة واحدة بعد النشر)
-│   └── clear-kv.js       ← حذف جميع البيانات المخزنة (استخدم بحذر!)
+│   ├── clear-kv.js       ← حذف جميع البيانات المخزنة (استخدم بحذر!)
+│   └── supabase.sql      ← إنشاء جدول التخزين في Supabase
 ├── lib/
 │   ├── text.js           ← النصوص والرسائل بالعربية والإنجليزية
 │   └── handlers/
@@ -137,7 +138,6 @@ telegram-bot/
 │       └── middleware/   ← وسائط التحقق والتصفية
 ├── .env                  ← (تُنشأ محلياً، غير محفوظة في git)
 ├── .env.example          ← القالب
-├── supabase.sql          ← إنشاء جدول التخزين في Supabase
 └── data/
     ├── masterList.json          ← قائمة الأعضاء المسجّلين
     ├── currentSession.json      ← الجلسة النشطة حالياً
