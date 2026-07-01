@@ -252,7 +252,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <h3>� التواصل والتقارير</h3>
       <div class="command">
-        <div class="cmd">/contact [رسالتك]</div>
+        <div class="cmd">/feedback [رسالتك]</div>
         <div class="desc">الإبلاغ عن مشاكل تقنية أو اقتراحات (يتم الإرسال بشكل مجهول الهوية مع طابع التاريخ فقط)</div>
       </div>
 
@@ -420,11 +420,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       <h2>🆘 الدعم والمساعدة</h2>
       <p>إذا واجهت أي مشاكل أو لديك اقتراحات:</p>
       <ul style="margin-left: 2rem;">
-        <li><strong>الإبلاغ عن مشاكل:</strong> استخدم الأمر <code>/contact [وصف المشكلة]</code> لإرسال تقرير مجهول الهوية</li>
+        <li><strong>الإبلاغ عن مشاكل:</strong> استخدم الأمر <code>/feedback [وصف المشكلة]</code> لإرسال تقرير مجهول الهوية</li>
         <li><strong>أمثلة مفيدة للتقرير:</strong>
           <ul>
-            <li><code>/contact عند استخدام /editlist، حالة الحضور لا تُحفظ</code></li>
-            <li><code>/contact /startlist لا يعرض أزرار الحضور في الرسالة</code></li>
+            <li><code>/feedback عند استخدام /editlist، حالة الحضور لا تُحفظ</code></li>
+            <li><code>/feedback /startlist لا يعرض أزرار الحضور في الرسالة</code></li>
           </ul>
         </li>
         <li><strong>نصيحة:</strong> اذكر الأمر المستخدم والمشكلة والسلوك المتوقع لتسهيل حل المشكلة</li>

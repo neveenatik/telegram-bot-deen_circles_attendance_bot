@@ -38,7 +38,7 @@ const commands = [
   { command: 'stoplist', description: 'إنهاء الحلقة الحالية (للمشرف)' },
   { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
   { command: 'studentshistory', description: 'عرض سجل الجلسات (للمشرف)' },
-  { command: 'contact', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
+  { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
 ];
 
 (async () => {
