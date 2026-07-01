@@ -14,6 +14,7 @@ const commands = [
   { command: 'addstudent', description: 'إضافة طالبة (للمشرف)' },
   { command: 'removestudent', description: 'حذف طالبة (للمشرف)' },
   { command: 'renamestudent', description: 'تعديل اسم طالبة (للمشرف)' },
+  { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },
   { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية(تصحيح التلاوة) للمسجلات (للمشرف)' },
