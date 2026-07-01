@@ -144,16 +144,16 @@ const HTML_DOCS = `<!DOCTYPE html>
 </head>
 <body>
   <header>
-    <h1>📚 بوت الحضور</h1>
+    <h1>📚 بوت حضور حلقات العلم</h1>
     <p>Deen Circles Attendance Bot</p>
-    <p style="font-size: 0.9rem; margin-top: 0.5rem;">نظام إدارة الحضور والتسجيل للدوائر الإسلامية</p>
+    <p style="font-size: 0.9rem; margin-top: 0.5rem;">نظام إدارة الحضور والتسجيل لحلقات العلم</p>
   </header>
 
   <div class="container">
     <!-- Getting Started -->
     <section>
       <h2>🚀 البدء السريع</h2>
-      <p>بوت الحضور يساعد في إدارة الحضور والتسجيل لمجموعات الدراسة الإسلامية.</p>
+      <p>بوت حضور حلقات العلم يساعد في إدارة الحضور والتسجيل لحلقات علوم الدين.</p>
       
       <div class="workflow">
         <h4>خطوات الإعداد الأولى (للمشرف):</h4>
