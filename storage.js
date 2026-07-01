@@ -135,6 +135,33 @@ const fileBackend = {
     all[gid].nextPage = Number.isInteger(nextPage) && nextPage > 0 ? nextPage : 1;
     writeJSON(GROUP_RECITATION_FILE, all);
   },
+  getCurrentSeries: async (groupId) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(SESSIONS_FILE);
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    const s = byGroup._series;
+    return Number.isInteger(s) && s > 0 ? s : 1;
+  },
+  saveCurrentSeries: async (groupId, series) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(SESSIONS_FILE);
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    byGroup._series = Number.isInteger(series) && series > 0 ? series : 1;
+    all[gid] = byGroup;
+    writeJSON(SESSIONS_FILE, all);
+  },
+  getAllSessions: async (groupId) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(SESSIONS_FILE);
+    const byGroup = all[gid] && typeof all[gid] === 'object' ? all[gid] : {};
+    const types = ['main', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation'];
+    const result = [];
+    for (const type of types) {
+      const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : {};
+      if (Array.isArray(byType.sessions)) result.push(...byType.sessions);
+    }
+    return result.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+  },
 };
 
 // ─── Supabase backend (production) ─────────────────────────────────────────────
@@ -230,6 +257,28 @@ async function supabaseBackend() {
       const data = (await get(`grouprecitation:${gid}`)) || {};
       data.nextPage = Number.isInteger(nextPage) && nextPage > 0 ? nextPage : 1;
       await set(`grouprecitation:${gid}`, data);
+    },
+    getCurrentSeries: async (groupId) => {
+      const gid = normalizeGroupId(groupId);
+      const data = (await get(`series:${gid}`)) || {};
+      const s = data.current;
+      return Number.isInteger(s) && s > 0 ? s : 1;
+    },
+    saveCurrentSeries: async (groupId, series) => {
+      const gid = normalizeGroupId(groupId);
+      const s = Number.isInteger(series) && series > 0 ? series : 1;
+      await set(`series:${gid}`, { current: s });
+    },
+    getAllSessions: async (groupId) => {
+      const gid = normalizeGroupId(groupId);
+      const byGroup = (await get(`sessions:${gid}`)) || {};
+      const types = ['main', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation'];
+      const result = [];
+      for (const type of types) {
+        const byType = byGroup[type] && typeof byGroup[type] === 'object' ? byGroup[type] : {};
+        if (Array.isArray(byType.sessions)) result.push(...byType.sessions);
+      }
+      return result.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
     },
   };
 }
