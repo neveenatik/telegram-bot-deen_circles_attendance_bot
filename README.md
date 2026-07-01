@@ -28,6 +28,7 @@ cp .env.example .env
 #    SUPABASE_URL=              ← Project URL من Supabase
 #    SUPABASE_SERVICE_ROLE_KEY= ← service_role secret من Supabase
 #    WEBHOOK_SECRET=            ← قيمة عشوائية اختيارية للأمان
+#    FEEDBACK_GROUP_ID=         ← معرّف المجموعة لاستقبال الرسائل (رقم سالب للمجموعات)
 
 # 5. أضف البوت إلى المجموعة وامنحه صلاحية المشرف
 #    الأوامر الإدارية تعمل فقط داخل المجموعة ومن المشرفين في Telegram
@@ -53,6 +54,7 @@ npm run set-commands
     - `SUPABASE_URL`
     - `SUPABASE_SERVICE_ROLE_KEY`
     - `WEBHOOK_SECRET` إذا كنت تستخدم التحقق من webhook
+    - `FEEDBACK_GROUP_ID` إذا كنت تريد استقبال رسائل التغذية الراجعة
 7. بعد النشر، سجّل قائمة أوامر Telegram حتى يظهر autocomplete عند كتابة `/`:
 
 ```bash
