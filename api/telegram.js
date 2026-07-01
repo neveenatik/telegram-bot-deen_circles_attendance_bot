@@ -216,23 +216,23 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/addstudent [معرّف] | [اسم]</div>
-        <div class="desc">إضافة طالبة جديدة بمعرّف تيليغرام وأسمها</div>
+        <div class="desc">إضافة طالبة أو أكثر — يمكن فصل الإدخالات بسطر جديد أو فاصلة</div>
       </div>
 
       <div class="command">
         <div class="cmd">/removestudent [اسم]</div>
-        <div class="desc">حذف طالبة من القائمة</div>
+        <div class="desc">حذف طالبة أو أكثر — يمكن فصل الأسماء بسطر جديد أو فاصلة</div>
       </div>
 
       <div class="command">
         <div class="cmd">/renamestudent [قديم] | [جديد]</div>
-        <div class="desc">تعديل اسم الطالبة</div>
+        <div class="desc">تعديل اسم طالبة أو أكثر — سطر جديد لكل إدخال</div>
       </div>
 
       <h3>🎤 إدارة المعلمات</h3>
       <div class="command">
         <div class="cmd">/addteacher [معرّف] | [اسم] | [نوع]</div>
-        <div class="desc">إضافة معلمة بأحد الأنواع: courseteacher, trainingteacher, recitationteacher</div>
+        <div class="desc">إضافة معلمة أو أكثر (سطر لكل إدخال) — الأنواع: courseteacher, trainingteacher, recitationteacher</div>
       </div>
 
       <div class="command">
