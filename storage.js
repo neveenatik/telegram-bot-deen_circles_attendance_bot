@@ -12,6 +12,7 @@ const CURRENT_FILE                 = path.join(DATA_DIR, 'currentSession.json');
 const AWAIT_FILE                   = path.join(DATA_DIR, 'awaiting.json');
 const PAGE_PROGRESS_FILE           = path.join(DATA_DIR, 'pageProgress.json');
 const GROUP_RECITATION_FILE        = path.join(DATA_DIR, 'groupRecitation.json');
+const TEACHERS_FILE                = path.join(DATA_DIR, 'teachers.json');
 
 const readJSON  = (f)    => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
@@ -162,6 +163,17 @@ const fileBackend = {
     }
     return result.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
   },
+  getTeachers: async (groupId) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(TEACHERS_FILE);
+    return all[gid] && Array.isArray(all[gid]) ? all[gid] : [];
+  },
+  saveTeachers: async (groupId, teachers) => {
+    const gid = normalizeGroupId(groupId);
+    const all = readMap(TEACHERS_FILE);
+    all[gid] = Array.isArray(teachers) ? teachers : [];
+    writeJSON(TEACHERS_FILE, all);
+  },
 };
 
 // ─── Supabase backend (production) ─────────────────────────────────────────────
@@ -279,6 +291,14 @@ async function supabaseBackend() {
         if (Array.isArray(byType.sessions)) result.push(...byType.sessions);
       }
       return result.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+    },
+    getTeachers: async (groupId) => {
+      const gid = normalizeGroupId(groupId);
+      return (await get(`teachers:${gid}`)) || [];
+    },
+    saveTeachers: async (groupId, teachers) => {
+      const gid = normalizeGroupId(groupId);
+      await set(`teachers:${gid}`, Array.isArray(teachers) ? teachers : []);
     },
   };
 }
