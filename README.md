@@ -119,7 +119,6 @@ npm run set-webhook -- https://your-project.vercel.app/api/telegram
 ```
 telegram-bot/
 ├── index.js              ← كود البوت الرئيسي
-├── storage.js            ← طبقة التخزين (ملفات JSON أو Supabase)
 ├── package.json
 ├── README.md
 ├── vercel.json           ← إعدادات نشر Vercel
@@ -131,6 +130,7 @@ telegram-bot/
 │   ├── clear-kv.js       ← حذف جميع البيانات المخزنة (استخدم بحذر!)
 │   └── supabase.sql      ← إنشاء جدول التخزين في Supabase
 ├── lib/
+│   ├── storage.js        ← طبقة التخزين (ملفات JSON أو Supabase)
 │   ├── text.js           ← النصوص والرسائل بالعربية والإنجليزية
 │   └── handlers/
 │       ├── commands/     ← معالجات الأوامر

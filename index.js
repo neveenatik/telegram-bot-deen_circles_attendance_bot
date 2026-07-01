@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
-import storage from './storage.js';
+import storage from './lib/storage.js';
 import { TEXT } from './lib/text.js';
 import { registerCommands } from './lib/handlers/commands/index.js';
 import { registerActions } from './lib/handlers/actions/index.js';
