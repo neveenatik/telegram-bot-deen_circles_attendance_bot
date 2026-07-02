@@ -225,6 +225,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
+        <div class="cmd">/removestudents</div>
+        <div class="desc">حذف جميع الطالبات المسجلات — متاح لمنشئ المجموعة فقط وبعد تأكيد</div>
+      </div>
+
+      <div class="command">
         <div class="cmd">/renamestudent [قديم] | [جديد]</div>
         <div class="desc">تعديل اسم طالبة أو أكثر — سطر جديد لكل إدخال</div>
       </div>

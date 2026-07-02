@@ -7,32 +7,43 @@ const commands = [
   { command: 'start', description: 'عرض رسالة الترحيب (للمشرف)' },
   { command: 'help', description: 'عرض قائمة الأوامر' },
   { command: 'myid', description: 'عرض معرف حسابك' },
+
+  // Session management
   { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
-  { command: 'students', description: 'إدارة قائمة الطالبات (للمشرف)' },
-  { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
-  { command: 'sortnames', description: 'ترتيب قائمة أسماء أبجدياً (للمشرف)' },
-  { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
-  { command: 'removestudent', description: 'حذف طالبة أو أكثر (للمشرف)' },
-  { command: 'renamestudent', description: 'تعديل اسم طالبة أو أكثر (للمشرف)' },
-  { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },
-  { command: 'addteacher', description: 'إضافة معلمة أو أكثر (للمشرف)' },
-  { command: 'removeteacher', description: 'حذف معلمة أو أكثر (للمشرف)' },
-  { command: 'assignteacher', description: 'تغيير نوع معلمة أو أكثر (للمشرف)' },
-  { command: 'listteachers', description: 'عرض قائمة المعلمات (للمشرف)' },
-  { command: 'tagteachers', description: 'الإشارة إلى المعلمات حسب النوع للإعلان (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },
-  { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية(تصحيح التلاوة) للمسجلات (للمشرف)' },
+  { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية (تصحيح التلاوة) للمسجلات (للمشرف)' },
   { command: 'startpersonalrecitation', description: 'بدء ختمة فردية وتعيين صفحات تلقائي (للمشرف)' },
   { command: 'startgrouprecitation', description: 'بدء ختمة جماعية متسلسلة (للمشرف)' },
   { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
+  { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
+  { command: 'stoplist', description: 'إنهاء الحلقة الحالية (للمشرف)' },
+
+  // Student management
+  { command: 'students', description: 'إدارة قائمة الطالبات (للمشرف)' },
+  { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
+  { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
+  { command: 'removestudent', description: 'حذف طالبة أو أكثر (للمشرف)' },
+  { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },
+  { command: 'renamestudent', description: 'تعديل اسم طالبة أو أكثر (للمشرف)' },
+  { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },
+
+  // Teacher management
+  { command: 'addteacher', description: 'إضافة معلمة أو أكثر (للمشرف)' },
+  { command: 'assignteacher', description: 'تغيير نوع معلمة أو أكثر (للمشرف)' },
+  { command: 'listteachers', description: 'عرض قائمة المعلمات (للمشرف)' },
+  { command: 'removeteacher', description: 'حذف معلمة أو أكثر (للمشرف)' },
+  { command: 'tagteachers', description: 'الإشارة إلى المعلمات حسب النوع للإعلان (للمشرف)' },
+
+  // History and lifecycle
   { command: 'newclass', description: 'مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)' },
   { command: 'classhistory', description: 'عرض سجلات الدورة (الحالية افتراضياً أو محددة) (للمشرف)' },
+  { command: 'studentshistory', description: 'عرض سجل الجلسات (للمشرف)' },
   { command: 'removeclassrecord', description: 'حذف سجل حلقة من الدورة الحالية (لمنشئ المجموعة)' },
   { command: 'removestudentrecord', description: 'حذف سجل طالبة من الدورة الحالية (لمنشئ المجموعة)' },
-  { command: 'stoplist', description: 'إنهاء الحلقة الحالية (للمشرف)' },
-  { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
-  { command: 'studentshistory', description: 'عرض سجل الجلسات (للمشرف)' },
+
+  // Utilities
+  { command: 'sortnames', description: 'ترتيب قائمة أسماء أبجدياً (للمشرف)' },
   { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
 ];
 
