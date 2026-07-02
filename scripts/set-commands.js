@@ -22,6 +22,7 @@ const commands = [
   // Student management
   { command: 'students', description: 'إدارة قائمة الطالبات (للمشرف)' },
   { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
+  { command: 'pendingstudents', description: 'عرض طلبات التسجيل المعلّقة (للمشرف)' },
   { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
   { command: 'removestudent', description: 'حذف طالبة أو أكثر (للمشرف)' },
   { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },
