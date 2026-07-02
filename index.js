@@ -10,9 +10,13 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 bot.use(async (ctx, next) => {
   try {
+    const chatType = ctx.chat?.type;
+    if (ctx.chat?.id && (chatType === 'group' || chatType === 'supergroup')) {
+      await storage.touchGroupActivity(String(ctx.chat.id));
+    }
+
     const messageId = ctx.message?.message_id;
     const from = ctx.from;
-    const chatType = ctx.chat?.type;
 
     if (
       messageId

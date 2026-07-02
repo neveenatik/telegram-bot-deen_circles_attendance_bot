@@ -157,6 +157,24 @@ telegram-bot/
 | `set-commands.js` | بعد تثبيت البوت محلياً أو كلما أضفت/عدّلت الأوامر | `npm run set-commands` |
 | `set-webhook.js` | مرة واحدة بعد نشر المشروع على Vercel (أو عند تغيير الدومين) | `npm run set-webhook -- <your-vercel-url>` |
 | `clear-kv.js` | لحذف جميع البيانات المخزنة (استخدم بحذر جداً!) | `npm run clear-kv` |
+| `cleanup-stale-groups.js` | لحذف بيانات المجموعات غير النشطة منذ 90 يوماً أو أكثر (فحص آمن أولاً) | `npm run cleanup-stale-groups:check` ثم `npm run cleanup-stale-groups` |
+
+### تنظيف البيانات غير المستخدمة
+
+بدلاً من حذف بيانات المجموعة فور إزالة البوت منها، يتتبع البوت آخر نشاط لكل مجموعة. يمكنك حذف بيانات المجموعات غير النشطة منذ 90 يوماً أو أكثر عبر:
+
+```bash
+# فحص فقط بدون حذف
+npm run cleanup-stale-groups:check
+
+# حذف فعلي للمجموعات غير النشطة منذ 90 يوماً
+npm run cleanup-stale-groups
+
+# تخصيص عدد الأيام يدوياً
+node scripts/cleanup-stale-groups.js --days=30 --yes
+```
+
+يشمل الحذف: قوائم الطالبات، الجلسات الحالية والمؤرشفة، التقدّم، المعلمات، وحالة الانتظار الخاصة بالمجموعة.
 
 ## سير العمل المعتاد
 

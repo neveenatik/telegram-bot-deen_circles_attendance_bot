@@ -8,7 +8,9 @@
     "set-webhook": "node scripts/set-webhook.js",
     "set-commands": "node scripts/set-commands.js",
     "clear-kv:check": "node scripts/clear-kv.js",
-    "clear-kv": "node scripts/clear-kv.js --yes"
+    "clear-kv": "node scripts/clear-kv.js --yes",
+    "cleanup-stale-groups:check": "node scripts/cleanup-stale-groups.js",
+    "cleanup-stale-groups": "node scripts/cleanup-stale-groups.js --yes"
   },
   "keywords": [],
   "author": "",
