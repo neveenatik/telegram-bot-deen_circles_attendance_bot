@@ -162,6 +162,8 @@ const HTML_DOCS = `<!DOCTYPE html>
           <li>استخدم <code>/students</code> لإدارة قائمة الطالبات</li>
           <li>استخدم <code>/addstudent [معرّف] | [اسم]</code> لإضافة طالبات</li>
           <li>استخدم <code>/startlist [اسم]</code> لبدء جلسة حضور</li>
+          <li>استخدم <code>/lessonstart</code> لرسالة افتتاح المجلس وتأكيد الحضور</li>
+          <li>استخدم <code>/lessonreminder</code> لنقاط المتابعة أثناء المجلس</li>
           <li>اضغط الأزرار لتسجيل حالات الحضور</li>
           <li>استخدم <code>/stoplist</code> لإنهاء الجلسة</li>
         </ol>
@@ -232,6 +234,17 @@ const HTML_DOCS = `<!DOCTYPE html>
       <div class="command">
         <div class="cmd">/renamestudent [قديم] | [جديد]</div>
         <div class="desc">تعديل اسم طالبة أو أكثر — سطر جديد لكل إدخال</div>
+      </div>
+
+      <h3>🕰️ متابعة المجلس</h3>
+      <div class="command">
+        <div class="cmd">/lessonstart</div>
+        <div class="desc">رسالة افتتاح المجلس مع تذكير بالنية وزر تأكيد الحضور</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/lessonreminder</div>
+        <div class="desc">إرسال نقطة متابعة جديدة أثناء المجلس مع زر تأكيد المتابعة</div>
       </div>
 
       <h3>🎤 إدارة المعلمات</h3>
