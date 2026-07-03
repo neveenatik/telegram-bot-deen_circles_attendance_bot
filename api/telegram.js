@@ -1,6 +1,7 @@
 // Vercel serverless webhook endpoint for Telegram.
 // Telegram POSTs updates here; we hand each one to the bot.
 import bot from '../index.js';
+import storage from '../lib/storage.js';
 
 const HTML_DOCS = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -469,10 +470,37 @@ export default async (req, res) => {
   if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
     return res.status(401).send('unauthorized');
   }
+
+  const updateId = Number.isInteger(req.body?.update_id) ? req.body.update_id : null;
+  let beganProcessing = false;
+  if (updateId !== null) {
+    try {
+      const staleMs = Number(process.env.UPDATE_PROCESSING_STALE_MS || 120000);
+      const begin = await storage.beginUpdateProcessing(updateId, Number.isFinite(staleMs) ? staleMs : 120000);
+      if (!begin?.shouldProcess) {
+        return res.status(200).send('ok');
+      }
+      beganProcessing = true;
+    } catch (e) {
+      console.error('update begin processing error:', e?.message || e);
+      // Continue handling to avoid dropping updates if idempotency layer has transient issues.
+    }
+  }
+
   try {
     await bot.handleUpdate(req.body);
+    if (beganProcessing && updateId !== null) {
+      await storage.completeUpdateProcessing(updateId);
+    }
   } catch (e) {
     console.error('handleUpdate error:', e?.message);
+    if (beganProcessing && updateId !== null) {
+      try {
+        await storage.failUpdateProcessing(updateId, e?.message || String(e));
+      } catch (failErr) {
+        console.error('update fail processing error:', failErr?.message || failErr);
+      }
+    }
   }
   res.status(200).send('ok');
 };

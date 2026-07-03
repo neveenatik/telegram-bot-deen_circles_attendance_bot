@@ -6,7 +6,7 @@
 
 ## المتطلبات
 
-- Node.js 18+
+- Node.js 22+
 - حساب بوت على Telegram عبر [@BotFather](https://t.me/BotFather)
 - حساب Supabase إذا كنت ستنشر على Vercel
 - يجب إضافة البوت إلى مجموعة Telegram واستخدام صلاحيات المشرف المدمجة في Telegram للتحكم بالأوامر الإدارية.
@@ -17,26 +17,29 @@
 # 1. أنشئ نسخة محلية من المشروع وانتقل إلى مجلده
 cd telegram-bot
 
-# 2. ثبّت الحزم
+# 2. فعّل نسخة Node المطابقة للمشروع
+nvm use
+
+# 3. ثبّت الحزم
 npm install
 
-# 3. أنشئ ملف .env من القالب
+# 4. أنشئ ملف .env من القالب
 cp .env.example .env
 
-# 4. عدّل .env وأضف القيم المطلوبة
+# 5. عدّل .env وأضف القيم المطلوبة
 #    BOT_TOKEN=                 ← من @BotFather
 #    SUPABASE_URL=              ← Project URL من Supabase
 #    SUPABASE_SERVICE_ROLE_KEY= ← service_role secret من Supabase
 #    WEBHOOK_SECRET=            ← قيمة عشوائية اختيارية للأمان
 #    FEEDBACK_GROUP_ID=         ← معرّف المجموعة لاستقبال الرسائل (رقم سالب للمجموعات)
 
-# 5. أضف البوت إلى المجموعة وامنحه صلاحية المشرف
+# 6. أضف البوت إلى المجموعة وامنحه صلاحية المشرف
 #    الأوامر الإدارية تعمل فقط داخل المجموعة ومن المشرفين في Telegram
 
-# 6. شغّل البوت
+# 7. شغّل البوت
 npm start
 
-# 7. (اختياري) سجّل قائمة الأوامر لظهور autocomplete في Telegram
+# 8. (اختياري) سجّل قائمة الأوامر لظهور autocomplete في Telegram
 npm run set-commands
 ```
 
@@ -162,6 +165,52 @@ telegram-bot/
 | `set-webhook.js` | مرة واحدة بعد نشر المشروع على Vercel (أو عند تغيير الدومين) | `npm run set-webhook -- <your-vercel-url>` |
 | `clear-kv.js` | لحذف جميع البيانات المخزنة (استخدم بحذر جداً!) | `npm run clear-kv` |
 | `cleanup-stale-groups.js` | لحذف بيانات المجموعات غير النشطة منذ 90 يوماً أو أكثر (فحص آمن أولاً) | `npm run cleanup-stale-groups:check` ثم `npm run cleanup-stale-groups` |
+
+### مخطط التخزين الجديد (V2)
+
+- المخطط العلاقي الجديد موجود في [scripts/supabase_v2.sql](scripts/supabase_v2.sql).
+- خطة الترحيل المرحلية موجودة في [docs/storage-v2-migration-plan.md](docs/storage-v2-migration-plan.md).
+- قبل التنفيذ في الإنتاج: خذ نسخة احتياطية من جدول `kv` ثم نفّذ مخطط V2، وبعدها ابدأ الترحيل على مراحل (backfill ثم dual-write ثم switch).
+
+#### تشغيل Backfill من KV إلى V2
+
+```bash
+# 1) تنفيذ مخطط V2 أولاً داخل Supabase SQL Editor
+# scripts/supabase_v2.sql
+
+# 2) فحص آمن (بدون كتابة)
+npm run migrate-v2:check
+
+# 3) تنفيذ فعلي للترحيل
+npm run migrate-v2
+
+# 4) تنفيذ على مجموعة محددة فقط (اختياري)
+node scripts/migrate-kv-to-v2.js --yes --group=-1001234567890
+```
+
+ملاحظات مهمة:
+- الترحيل يستخدم upsert قدر الإمكان ليكون آمناً عند إعادة التشغيل.
+- يفضَّل إيقاف كتابة الإنتاج مؤقتاً أثناء backfill لتقليل تعارضات التوقيت.
+- لا تحذف جدول `kv` إلا بعد مرحلة dual-write والتحقق الكامل من المطابقة.
+
+#### تدقيق وإصلاح البيانات بعد الترحيل
+
+```bash
+# فحص المشاكل فقط (بدون تعديل)
+npm run audit-v2:check
+
+# إصلاح تلقائي للمشاكل الشائعة
+npm run audit-v2:fix
+
+# تخصيص حد stale-lock (مثال: 5 دقائق)
+node scripts/audit-v2-fixes.js --yes --stale-ms=300000
+```
+
+يشمل الفحص/الإصلاح:
+- إنشاء `group_settings` المفقودة إن وجدت.
+- ربط `session_participants` غير المربوطة بعضو عند تطابق الاسم داخل نفس المجموعة.
+- تنظيف حقول الحلّ في الطلبات المعلقة `pending` إذا كانت ممتلئة بالخطأ.
+- تحويل `processed_updates` العالقة بحالة `processing` إلى `failed` بعد انتهاء مهلة stale-lock.
 
 ### تنظيف البيانات غير المستخدمة
 

@@ -7,6 +7,10 @@
     "start": "node index.js",
     "set-webhook": "node scripts/set-webhook.js",
     "set-commands": "node scripts/set-commands.js",
+    "migrate-v2:check": "node scripts/migrate-kv-to-v2.js",
+    "migrate-v2": "node scripts/migrate-kv-to-v2.js --yes",
+    "audit-v2:check": "node scripts/audit-v2-fixes.js",
+    "audit-v2:fix": "node scripts/audit-v2-fixes.js --yes",
     "clear-kv:check": "node scripts/clear-kv.js",
     "clear-kv": "node scripts/clear-kv.js --yes",
     "cleanup-stale-groups:check": "node scripts/cleanup-stale-groups.js",
@@ -16,6 +20,9 @@
   "author": "",
   "license": "ISC",
   "description": "",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "dotenv": "^17.4.2",
