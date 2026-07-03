@@ -16,6 +16,7 @@ const commands = [
   { command: 'startpersonalrecitation', description: 'بدء ختمة فردية وتعيين صفحات تلقائي (للمشرف)' },
   { command: 'startgrouprecitation', description: 'بدء ختمة جماعية متسلسلة (للمشرف)' },
   { command: 'lessonstart', description: 'رسالة افتتاح المجلس مع تأكيد الحضور (للمشرف)' },
+  { command: 'startless', description: 'مرادف سريع لـ lessonstart (للمشرف)' },
   { command: 'lessonreminder', description: 'إرسال نقطة متابعة أثناء المجلس (للمشرف)' },
   { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
   { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
@@ -46,7 +47,7 @@ const commands = [
   { command: 'removestudentrecord', description: 'حذف سجل طالبة من الدورة الحالية (لمنشئ المجموعة)' },
 
   // Utilities
-  { command: 'sortnames', description: 'ترتيب قائمة أسماء أبجدياً (للمشرف)' },
+  { command: 'sortnames', description: 'ترتيب أسماء (فوري أو start/add/done) (للمشرف)' },
   { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
 ];
 

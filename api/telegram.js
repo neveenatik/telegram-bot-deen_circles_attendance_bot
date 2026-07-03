@@ -259,6 +259,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
+        <div class="cmd">/startless</div>
+        <div class="desc">مرادف سريع للأمر /lessonstart بنفس الوظيفة</div>
+      </div>
+
+      <div class="command">
         <div class="cmd">/lessonreminder</div>
         <div class="desc">إرسال نقطة متابعة جديدة أثناء المجلس مع زر تأكيد المتابعة</div>
       </div>
@@ -288,6 +293,16 @@ const HTML_DOCS = `<!DOCTYPE html>
       <div class="command">
         <div class="cmd">/feedback [رسالتك]</div>
         <div class="desc">الإبلاغ عن مشاكل تقنية أو اقتراحات (يتم الإرسال بشكل مجهول الهوية مع طابع التاريخ فقط)</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/sortnames [أسماء]</div>
+        <div class="desc">ترتيب فوري للأسماء (يدعم | أو , أو سطر جديد، مع دعم الترقيم)</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/sortnames start ثم add ثم done</div>
+        <div class="desc">تجميع أسماء عبر عدة رسائل ثم ترتيبها دفعة واحدة (و /sortnames cancel للإلغاء)</div>
       </div>
 
       <h3>�📋 إدارة الجلسات</h3>
@@ -425,7 +440,7 @@ const HTML_DOCS = `<!DOCTYPE html>
       <ul style="margin-left: 2rem;">
         <li><strong>معرّف التيليغرام:</strong> استخدم <code>/myid</code> في أي محادثة خاصة مع البوت للحصول على معرفك</li>
         <li><strong>التسجيل الأسهل:</strong> أرسل <code>/register</code> داخل المجموعة ليظهر زر الطلب، ثم راجع الطلبات عبر <code>/pendingstudents</code></li>
-        <li><strong>الترتيب التلقائي:</strong> استخدم <code>/sortnames [أسماء]</code> لترتيب القائمة أبجدياً</li>
+        <li><strong>الترتيب التلقائي:</strong> استخدم <code>/sortnames [أسماء]</code> للفرز الفوري، أو <code>/sortnames start</code> ثم <code>add</code> ثم <code>done</code> للتجميع</li>
         <li><strong>سجلات الدورات:</strong> كل دورة لها سجلات منفصلة. استخدم <code>/newclass</code> للبدء بدورة جديدة، والبيانات القديمة تبقى في الأرشيف</li>
         <li><strong>الوصول للأرشيف:</strong> استخدم <code>/classhistory 1</code> أو <code>/studentshistory 1</code> للوصول إلى سجلات الدورات السابقة (لا شيء يُحذف!)</li>
         <li><strong>الحفظ التلقائي:</strong> جميع البيانات تُحفظ تلقائياً عند إنهاء الجلسة</li>
