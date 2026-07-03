@@ -34,6 +34,7 @@ const commands = [
 
   // Teacher management
   { command: 'addteacher', description: 'إضافة معلمة أو أكثر (للمشرف)' },
+  { command: 'addteacherreply', description: 'إضافة معلمة بالرد على رسالتها مباشرة (للمشرف)' },
   { command: 'assignteacher', description: 'تغيير نوع معلمة أو أكثر (للمشرف)' },
   { command: 'listteachers', description: 'عرض قائمة المعلمات (للمشرف)' },
   { command: 'removeteacher', description: 'حذف معلمة أو أكثر (للمشرف)' },
