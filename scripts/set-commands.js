@@ -53,7 +53,12 @@ const commands = [
 
 (async () => {
   if (!process.env.BOT_TOKEN) {
-    console.error('BOT_TOKEN is missing in environment variables.');
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'set_commands_missing_bot_token',
+      message: 'BOT_TOKEN is missing in environment variables.',
+      at: new Date().toISOString(),
+    }));
     process.exit(1);
   }
 
@@ -74,7 +79,12 @@ const commands = [
 
     // Arabic command menu label where supported
     await bot.telegram.setChatMenuButton({ menu_button: { type: 'commands' } }).catch((err) => {
-      console.warn('⚠️ setChatMenuButton failed:', err?.message || err);
+      console.warn(JSON.stringify({
+        level: 'warn',
+        event: 'set_commands_menu_button_failed',
+        message: err?.message || String(err),
+        at: new Date().toISOString(),
+      }));
     });
     console.log('✅ Command menu button set');
 
@@ -83,7 +93,12 @@ const commands = [
     console.log('   - All group chats');
     console.log('   - Group administrators');
   } catch (err) {
-    console.error('❌ Error registering commands:', err.message);
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'set_commands_register_failed',
+      message: err?.message || String(err),
+      at: new Date().toISOString(),
+    }));
     process.exit(1);
   }
 })();

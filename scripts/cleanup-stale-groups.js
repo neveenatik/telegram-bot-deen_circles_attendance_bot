@@ -38,6 +38,11 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err.message || err);
+  console.error(JSON.stringify({
+    level: 'error',
+    event: 'cleanup_stale_groups_unhandled_error',
+    message: err?.message || String(err),
+    at: new Date().toISOString(),
+  }));
   process.exit(1);
 });

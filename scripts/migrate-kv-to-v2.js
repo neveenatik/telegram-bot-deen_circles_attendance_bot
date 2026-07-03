@@ -572,7 +572,12 @@ async function main() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.');
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'migrate_v2_missing_env',
+      message: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.',
+      at: new Date().toISOString(),
+    }));
     process.exit(1);
   }
 
@@ -605,6 +610,11 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err?.message || err);
+  console.error(JSON.stringify({
+    level: 'error',
+    event: 'migrate_v2_unhandled_error',
+    message: err?.message || String(err),
+    at: new Date().toISOString(),
+  }));
   process.exit(1);
 });
