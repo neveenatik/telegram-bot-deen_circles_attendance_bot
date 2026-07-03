@@ -549,7 +549,13 @@ export default async (req, res) => {
       }
       beganProcessing = true;
     } catch (e) {
-      console.error('update begin processing error:', e?.message || e);
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'webhook_begin_processing_failed',
+        updateId,
+        message: e?.message || String(e),
+        at: new Date().toISOString(),
+      }));
       // Continue handling to avoid dropping updates if idempotency layer has transient issues.
     }
   }
@@ -560,12 +566,24 @@ export default async (req, res) => {
       await storage.completeUpdateProcessing(updateId);
     }
   } catch (e) {
-    console.error('handleUpdate error:', e?.message);
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'webhook_handle_update_failed',
+      updateId,
+      message: e?.message || String(e),
+      at: new Date().toISOString(),
+    }));
     if (beganProcessing && updateId !== null) {
       try {
         await storage.failUpdateProcessing(updateId, e?.message || String(e));
       } catch (failErr) {
-        console.error('update fail processing error:', failErr?.message || failErr);
+        console.error(JSON.stringify({
+          level: 'error',
+          event: 'webhook_mark_failed_update_failed',
+          updateId,
+          message: failErr?.message || String(failErr),
+          at: new Date().toISOString(),
+        }));
       }
     }
   }

@@ -1,8 +1,10 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
 import storage from './lib/storage.js';
+import { ACTIVE_SESSION_TYPES } from './lib/sessionTypes.js';
 import { TEXT } from './lib/text.js';
 import { isAdmin } from './lib/guards.js';
+import { getErrorDescription } from './lib/helpers.js';
 import { registerCommands } from './lib/handlers/commands/index.js';
 import { registerActions } from './lib/handlers/actions/index.js';
 
@@ -52,11 +54,10 @@ bot.use(async (ctx, next) => {
       && chatType !== 'private'
     ) {
       const groupId = String(ctx.chat.id);
-      const types = ['main', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation'];
 
       let activeType = null;
       let session = null;
-      for (const type of types) {
+      for (const type of ACTIVE_SESSION_TYPES) {
         const candidate = await storage.getSession(groupId, type);
         if (candidate && candidate.active) {
           activeType = type;
@@ -73,7 +74,16 @@ bot.use(async (ctx, next) => {
         }
       }
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: 'warn',
+      event: 'middleware_activity_tracking_failed',
+      message: getErrorDescription(err),
+      chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
+      userId: ctx?.from?.id ? String(ctx.from.id) : null,
+      at: new Date().toISOString(),
+    }));
+  }
 
   return next();
 });
@@ -85,12 +95,23 @@ bot.catch((err, ctx) => {
   console.error(JSON.stringify({
     level: 'error',
     event: 'bot_error',
-    message: err?.message || 'unknown error',
+    message: getErrorDescription(err),
+    updateType: ctx?.updateType || null,
+    command: extractCommand(ctx),
     chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
     userId: ctx?.from?.id ? String(ctx.from.id) : null,
     at: new Date().toISOString(),
   }));
-  ctx?.reply(TEXT.genericError).catch(() => {});
+  ctx?.reply(TEXT.genericError).catch((replyErr) => {
+    console.warn(JSON.stringify({
+      level: 'warn',
+      event: 'bot_error_reply_failed',
+      message: getErrorDescription(replyErr),
+      chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
+      userId: ctx?.from?.id ? String(ctx.from.id) : null,
+      at: new Date().toISOString(),
+    }));
+  });
 });
 
 if (!process.env.VERCEL) {

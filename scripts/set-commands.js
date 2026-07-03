@@ -73,7 +73,9 @@ const commands = [
     console.log('✅ Commands registered for group administrators');
 
     // Arabic command menu label where supported
-    await bot.telegram.setChatMenuButton({ menu_button: { type: 'commands' } }).catch(() => {});
+    await bot.telegram.setChatMenuButton({ menu_button: { type: 'commands' } }).catch((err) => {
+      console.warn('⚠️ setChatMenuButton failed:', err?.message || err);
+    });
     console.log('✅ Command menu button set');
 
     console.log('\n✅ All command scopes registered successfully!');
