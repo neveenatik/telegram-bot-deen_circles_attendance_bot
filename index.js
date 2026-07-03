@@ -4,11 +4,13 @@ import storage from './lib/storage.js';
 import { ACTIVE_SESSION_TYPES } from './lib/sessionTypes.js';
 import { TEXT } from './lib/text.js';
 import { isAdmin } from './lib/guards.js';
-import { getErrorDescription } from './lib/helpers.js';
+import { getErrorDescription, replyEphemeral } from './lib/helpers.js';
 import { registerCommands } from './lib/handlers/commands/index.js';
 import { registerActions } from './lib/handlers/actions/index.js';
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const ERROR_NOTICE_COOLDOWN_MS = 30000;
+const lastErrorNoticeByChat = new Map();
 
 function extractCommand(ctx) {
   const message = ctx.message;
@@ -102,15 +104,41 @@ bot.catch((err, ctx) => {
     userId: ctx?.from?.id ? String(ctx.from.id) : null,
     at: new Date().toISOString(),
   }));
-  ctx?.reply(TEXT.genericError).catch((replyErr) => {
+
+  const replyFailedLog = (replyErr, event = 'bot_error_reply_failed') => {
     console.warn(JSON.stringify({
       level: 'warn',
-      event: 'bot_error_reply_failed',
+      event,
       message: getErrorDescription(replyErr),
       chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
       userId: ctx?.from?.id ? String(ctx.from.id) : null,
       at: new Date().toISOString(),
     }));
+  };
+
+  if (ctx?.callbackQuery) {
+    ctx.answerCbQuery(TEXT.genericError, { show_alert: true }).catch((replyErr) => {
+      replyFailedLog(replyErr, 'bot_error_callback_alert_failed');
+    });
+    return;
+  }
+
+  const chatId = ctx?.chat?.id ? String(ctx.chat.id) : null;
+  const chatType = ctx?.chat?.type || null;
+  if (chatId && (chatType === 'group' || chatType === 'supergroup')) {
+    const now = Date.now();
+    const lastSentAt = lastErrorNoticeByChat.get(chatId) || 0;
+    if (now - lastSentAt < ERROR_NOTICE_COOLDOWN_MS) return;
+    lastErrorNoticeByChat.set(chatId, now);
+
+    replyEphemeral(ctx, TEXT.genericError).catch((replyErr) => {
+      replyFailedLog(replyErr);
+    });
+    return;
+  }
+
+  ctx?.reply(TEXT.genericError).catch((replyErr) => {
+    replyFailedLog(replyErr);
   });
 });
 
