@@ -8,6 +8,32 @@ import { registerActions } from './lib/handlers/actions/index.js';
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
+function extractCommand(ctx) {
+  const message = ctx.message;
+  if (!message?.text || !Array.isArray(message.entities)) return null;
+  const first = message.entities.find((e) => e?.type === 'bot_command' && e.offset === 0);
+  if (!first) return null;
+  const raw = String(message.text).slice(0, first.length);
+  if (!raw.startsWith('/')) return null;
+  return raw.slice(1).split('@')[0].trim().toLowerCase() || null;
+}
+
+bot.use(async (ctx, next) => {
+  const cmd = extractCommand(ctx);
+  if (cmd) {
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'command',
+      command: cmd,
+      chatId: ctx.chat?.id ? String(ctx.chat.id) : null,
+      chatType: ctx.chat?.type || null,
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      at: new Date().toISOString(),
+    }));
+  }
+  return next();
+});
+
 bot.use(async (ctx, next) => {
   try {
     const chatType = ctx.chat?.type;
@@ -56,7 +82,14 @@ registerCommands(bot, storage);
 registerActions(bot, storage);
 
 bot.catch((err, ctx) => {
-  console.error('Bot error:', err?.message);
+  console.error(JSON.stringify({
+    level: 'error',
+    event: 'bot_error',
+    message: err?.message || 'unknown error',
+    chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
+    userId: ctx?.from?.id ? String(ctx.from.id) : null,
+    at: new Date().toISOString(),
+  }));
   ctx?.reply(TEXT.genericError).catch(() => {});
 });
 
