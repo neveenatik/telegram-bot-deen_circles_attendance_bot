@@ -161,7 +161,7 @@ const HTML_DOCS = `<!DOCTYPE html>
         <ol>
           <li>أضف البوت إلى مجموعتك على تيليغرام</li>
           <li>استخدم <code>/students</code> كطريقة موصى بها لإدارة قائمة الطالبات</li>
-          <li>استخدم <code>/addstudent [معرّف] | [اسم]</code> لإضافة طالبات</li>
+          <li>استخدم <code>/addstudent [رقم الحساب] | [الاسم]</code> لإضافة طالبات</li>
           <li>استخدم <code>/startlist [اسم]</code> لبدء جلسة حضور</li>
           <li>استخدم <code>/lessonstart</code> لرسالة افتتاح المجلس وتأكيد الحضور</li>
           <li>استخدم <code>/lessonreminder</code> لنقاط المتابعة أثناء المجلس</li>
@@ -302,7 +302,7 @@ const HTML_DOCS = `<!DOCTYPE html>
       <h3>� التواصل والتقارير</h3>
       <div class="command">
         <div class="cmd">/feedback [رسالتك]</div>
-        <div class="desc">الإبلاغ عن مشاكل تقنية أو اقتراحات (يتم الإرسال بشكل مجهول الهوية مع طابع التاريخ فقط)</div>
+        <div class="desc">إرسال مشكلة أو اقتراح (بدون إظهار الاسم، مع وقت الإرسال فقط)</div>
       </div>
 
       <div class="command">
@@ -401,8 +401,8 @@ const HTML_DOCS = `<!DOCTYPE html>
         <p>لا يزال التسجيل اليدوي متاحاً كخيار احتياطي عبر <code>/myid</code>.</p>
         <br>
         <strong>الأمر:</strong> <code>/addstudent 987654321 | فاطمة أحمد</code>
-        <p>حيث <code>987654321</code> هو معرّف التيليغرام الخاص بفاطمة</p>
-        <p>يمكن الحصول على المعرّف باستخدام: <code>/myid</code></p>
+        <p>الرقم <code>987654321</code> هو رقم حساب فاطمة في تيليغرام</p>
+        <p>يمكن معرفة رقم الحساب باستخدام: <code>/myid</code></p>
       </div>
 
       <h3>مثال 3: الوصول إلى السجلات المؤرشفة</h3>
@@ -463,7 +463,7 @@ const HTML_DOCS = `<!DOCTYPE html>
     <section>
       <h2>💡 نصائح وتلميحات</h2>
       <ul style="margin-left: 2rem;">
-        <li><strong>معرّف التيليغرام:</strong> استخدم <code>/myid</code> في أي محادثة خاصة مع البوت للحصول على معرفك</li>
+        <li><strong>رقم الحساب في تيليغرام:</strong> استخدم <code>/myid</code> في أي محادثة خاصة مع البوت لمعرفة رقمك</li>
         <li><strong>التسجيل الأسهل:</strong> أرسل <code>/register</code> داخل المجموعة ليظهر زر الطلب، ثم راجع الطلبات عبر <code>/pendingstudents</code></li>
         <li><strong>الترتيب التلقائي:</strong> استخدم <code>/sortnames [أسماء]</code> للفرز الفوري، أو <code>/sortnames start</code> ثم <code>add</code> ثم <code>done</code> للتجميع</li>
         <li><strong>سجلات الدورات:</strong> كل دورة لها سجلات منفصلة. استخدم <code>/newclass</code> للبدء بدورة جديدة، والبيانات القديمة تبقى في الأرشيف</li>
@@ -478,8 +478,8 @@ const HTML_DOCS = `<!DOCTYPE html>
     <section>
       <h2>❓ الأسئلة الشائعة</h2>
       
-      <h3>كيف أحصل على معرّف التيليغرام؟</h3>
-      <p>افتح محادثة خاصة مع البوت وأرسل <code>/myid</code>. سيرد لك بمعرّفك.</p>
+      <h3>كيف أحصل على رقم حسابي في تيليغرام؟</h3>
+      <p>افتح محادثة خاصة مع البوت وأرسل <code>/myid</code>. سيرد عليك برقم حسابك.</p>
 
       <h3>ما أفضل طريقة لتسجيل الطالبات الآن؟</h3>
       <p>الطريقة الموصى بها: المشرفة ترسل <code>/register</code> داخل المجموعة، الطالبات يضغطن زر الطلب، ثم تراجعين الطلبات من <code>/pendingstudents</code>. ما زال <code>/myid</code> متاحاً كخيار احتياطي.</p>

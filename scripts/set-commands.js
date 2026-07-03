@@ -6,7 +6,7 @@ import { Telegraf } from 'telegraf';
 const commands = [
   { command: 'start', description: 'عرض رسالة الترحيب (للمشرف)' },
   { command: 'help', description: 'عرض قائمة الأوامر' },
-  { command: 'myid', description: 'عرض معرف حسابك للتسجيل اليدوي' },
+  { command: 'myid', description: 'عرض رقم حسابك للتسجيل اليدوي' },
 
   // Session management
   { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
@@ -16,7 +16,7 @@ const commands = [
   { command: 'startpersonalrecitation', description: 'بدء ختمة فردية وتعيين صفحات تلقائي (للمشرف)' },
   { command: 'startgrouprecitation', description: 'بدء ختمة جماعية متسلسلة (للمشرف)' },
   { command: 'lessonstart', description: 'رسالة افتتاح المجلس مع تأكيد الحضور (للمشرف)' },
-  { command: 'startless', description: 'مرادف سريع لـ lessonstart (للمشرف)' },
+  { command: 'startless', description: 'نفس أمر lessonstart بشكل مختصر (للمشرف)' },
   { command: 'lessonreminder', description: 'إرسال نقطة متابعة أثناء المجلس (للمشرف)' },
   { command: 'freezelist', description: 'تجميد تسجيل الحضور (للمشرف)' },
   { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
@@ -24,10 +24,10 @@ const commands = [
 
   // Student management
   { command: 'students', description: 'إدارة قائمة الطالبات (الطريقة الموصى بها) (للمشرف)' },
-  { command: 'register', description: 'إرسال زر طلب التسجيل للطالبات (للمشرف)' },
-  { command: 'pendingstudents', description: 'عرض طلبات التسجيل المعلّقة (زر أو myid) (للمشرف)' },
+  { command: 'register', description: 'إرسال رسالة فيها زر طلب التسجيل (للمشرف)' },
+  { command: 'pendingstudents', description: 'مراجعة طلبات التسجيل وقبولها أو تجاهلها (للمشرف)' },
   { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
-  { command: 'removestudent', description: 'حذف احتياطي لطالبة أو أكثر (اسم/معرّف) (للمشرف)' },
+  { command: 'removestudent', description: 'حذف احتياطي لطالبة أو أكثر (اسم/رقم حساب) (للمشرف)' },
   { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },
   { command: 'renamestudent', description: 'تعديل اسم طالبة أو أكثر (للمشرف)' },
   { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },
@@ -40,7 +40,7 @@ const commands = [
   { command: 'tagteachers', description: 'الإشارة إلى المعلمات حسب النوع للإعلان (للمشرف)' },
 
   // History and lifecycle
-  { command: 'newclass', description: 'مسح تاريخ الحضور والبدء بدورة جديدة (لمنشئ المجموعة)' },
+  { command: 'newclass', description: 'بدء دورة جديدة مع حفظ السجلات السابقة (لمنشئ المجموعة)' },
   { command: 'classhistory', description: 'عرض سجلات الدورة (الحالية افتراضياً أو محددة) (للمشرف)' },
   { command: 'studentshistory', description: 'عرض سجل الجلسات (للمشرف)' },
   { command: 'removeclassrecord', description: 'حذف سجل حلقة من الدورة الحالية (لمنشئ المجموعة)' },
