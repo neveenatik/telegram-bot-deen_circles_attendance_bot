@@ -6,7 +6,7 @@ import { Telegraf } from 'telegraf';
 const commands = [
   { command: 'start', description: 'عرض رسالة الترحيب (للمشرف)' },
   { command: 'help', description: 'عرض قائمة الأوامر' },
-  { command: 'myid', description: 'عرض معرف حسابك' },
+  { command: 'myid', description: 'عرض معرف حسابك للتسجيل اليدوي' },
 
   // Session management
   { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
@@ -23,8 +23,8 @@ const commands = [
 
   // Student management
   { command: 'students', description: 'إدارة قائمة الطالبات (للمشرف)' },
-  { command: 'registerinfo', description: 'شرح طريقة التسجيل (للمشرف)' },
-  { command: 'pendingstudents', description: 'عرض طلبات التسجيل المعلّقة (للمشرف)' },
+  { command: 'register', description: 'إرسال زر طلب التسجيل للطالبات (للمشرف)' },
+  { command: 'pendingstudents', description: 'عرض طلبات التسجيل المعلّقة (زر أو myid) (للمشرف)' },
   { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
   { command: 'removestudent', description: 'حذف طالبة أو أكثر (للمشرف)' },
   { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },

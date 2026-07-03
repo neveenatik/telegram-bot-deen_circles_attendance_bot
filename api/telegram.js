@@ -213,6 +213,16 @@ const HTML_DOCS = `<!DOCTYPE html>
       
       <h3>👥 إدارة الطالبات</h3>
       <div class="command">
+        <div class="cmd">/register</div>
+        <div class="desc">إرسال رسالة تحتوي زر "طلب التسجيل" لتقديم الطلبات مباشرة داخل المجموعة</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/pendingstudents</div>
+        <div class="desc">مراجعة طلبات التسجيل المعلّقة ثم قبول الطالبة أو تجاهل الطلب</div>
+      </div>
+
+      <div class="command">
         <div class="cmd">/students</div>
         <div class="desc">عرض قائمة الطالبات مع خيارات إضافة/حذف/تعديل</div>
       </div>
@@ -235,6 +245,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       <div class="command">
         <div class="cmd">/renamestudent [قديم] | [جديد]</div>
         <div class="desc">تعديل اسم طالبة أو أكثر — سطر جديد لكل إدخال</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/myid</div>
+        <div class="desc">إظهار معرّف الطالبة للتسجيل اليدوي (كخيار احتياطي أثناء تثبيت نظام /register)</div>
       </div>
 
       <h3>🕰️ متابعة المجلس</h3>
@@ -337,6 +352,14 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <h3>مثال 2: إضافة طالبة جديدة</h3>
       <div class="example">
+        <strong>الطريقة الموصى بها:</strong>
+        <ol>
+          <li>المشرفة ترسل: <code>/register</code></li>
+          <li>الطالبة تضغط زر <code>طلب التسجيل</code></li>
+          <li>المشرفة تراجع الطلبات عبر: <code>/pendingstudents</code> ثم تضغط قبول أو تجاهل</li>
+        </ol>
+        <p>لا يزال التسجيل اليدوي متاحاً كخيار احتياطي عبر <code>/myid</code>.</p>
+        <br>
         <strong>الأمر:</strong> <code>/addstudent 987654321 | فاطمة أحمد</code>
         <p>حيث <code>987654321</code> هو معرّف التيليغرام الخاص بفاطمة</p>
         <p>يمكن الحصول على المعرّف باستخدام: <code>/myid</code></p>
@@ -401,6 +424,7 @@ const HTML_DOCS = `<!DOCTYPE html>
       <h2>💡 نصائح وتلميحات</h2>
       <ul style="margin-left: 2rem;">
         <li><strong>معرّف التيليغرام:</strong> استخدم <code>/myid</code> في أي محادثة خاصة مع البوت للحصول على معرفك</li>
+        <li><strong>التسجيل الأسهل:</strong> أرسل <code>/register</code> داخل المجموعة ليظهر زر الطلب، ثم راجع الطلبات عبر <code>/pendingstudents</code></li>
         <li><strong>الترتيب التلقائي:</strong> استخدم <code>/sortnames [أسماء]</code> لترتيب القائمة أبجدياً</li>
         <li><strong>سجلات الدورات:</strong> كل دورة لها سجلات منفصلة. استخدم <code>/newclass</code> للبدء بدورة جديدة، والبيانات القديمة تبقى في الأرشيف</li>
         <li><strong>الوصول للأرشيف:</strong> استخدم <code>/classhistory 1</code> أو <code>/studentshistory 1</code> للوصول إلى سجلات الدورات السابقة (لا شيء يُحذف!)</li>
@@ -416,6 +440,9 @@ const HTML_DOCS = `<!DOCTYPE html>
       
       <h3>كيف أحصل على معرّف التيليغرام؟</h3>
       <p>افتح محادثة خاصة مع البوت وأرسل <code>/myid</code>. سيرد لك بمعرّفك.</p>
+
+      <h3>ما أفضل طريقة لتسجيل الطالبات الآن؟</h3>
+      <p>الطريقة الموصى بها: المشرفة ترسل <code>/register</code> داخل المجموعة، الطالبات يضغطن زر الطلب، ثم تراجعين الطلبات من <code>/pendingstudents</code>. ما زال <code>/myid</code> متاحاً كخيار احتياطي.</p>
 
       <h3>هل يمكن استخدام البوت في عدة مجموعات؟</h3>
       <p>نعم! لكل مجموعة قائمتها وسجلاتها الخاصة.</p>
