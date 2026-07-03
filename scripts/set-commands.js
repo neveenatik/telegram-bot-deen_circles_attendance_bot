@@ -23,11 +23,11 @@ const commands = [
   { command: 'stoplist', description: 'إنهاء الحلقة الحالية (للمشرف)' },
 
   // Student management
-  { command: 'students', description: 'إدارة قائمة الطالبات (للمشرف)' },
+  { command: 'students', description: 'إدارة قائمة الطالبات (الطريقة الموصى بها) (للمشرف)' },
   { command: 'register', description: 'إرسال زر طلب التسجيل للطالبات (للمشرف)' },
   { command: 'pendingstudents', description: 'عرض طلبات التسجيل المعلّقة (زر أو myid) (للمشرف)' },
   { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
-  { command: 'removestudent', description: 'حذف طالبة أو أكثر (للمشرف)' },
+  { command: 'removestudent', description: 'حذف احتياطي لطالبة أو أكثر (اسم/معرّف) (للمشرف)' },
   { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },
   { command: 'renamestudent', description: 'تعديل اسم طالبة أو أكثر (للمشرف)' },
   { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },
@@ -63,17 +63,18 @@ const commands = [
   }
 
   const bot = new Telegraf(process.env.BOT_TOKEN);
+  const hiddenCommands = [];
 
   try {
-    // Direct messages / private chats
-    await bot.telegram.setMyCommands(commands, { scope: { type: 'default' } });
-    console.log('✅ Commands registered for direct messages (default scope)');
+    // Hide command menu for users outside administrator scope.
+    await bot.telegram.setMyCommands(hiddenCommands, { scope: { type: 'default' } });
+    console.log('✅ Commands cleared for default scope');
 
-    // All group chats (groups and supergroups)
-    await bot.telegram.setMyCommands(commands, { scope: { type: 'all_group_chats' } });
-    console.log('✅ Commands registered for all group chats');
+    // Hide command menu for non-admin members in group chats.
+    await bot.telegram.setMyCommands(hiddenCommands, { scope: { type: 'all_group_chats' } });
+    console.log('✅ Commands cleared for all group chats');
 
-    // Group administrators
+    // Expose command menu only to group administrators.
     await bot.telegram.setMyCommands(commands, { scope: { type: 'all_chat_administrators' } });
     console.log('✅ Commands registered for group administrators');
 
@@ -89,9 +90,9 @@ const commands = [
     console.log('✅ Command menu button set');
 
     console.log('\n✅ All command scopes registered successfully!');
-    console.log('   - Direct messages (default)');
-    console.log('   - All group chats');
-    console.log('   - Group administrators');
+    console.log('   - Default scope hidden');
+    console.log('   - All group chats hidden for non-admins');
+    console.log('   - Group administrators visible');
   } catch (err) {
     console.error(JSON.stringify({
       level: 'error',

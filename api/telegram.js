@@ -160,7 +160,7 @@ const HTML_DOCS = `<!DOCTYPE html>
         <h4>خطوات الإعداد الأولى (للمشرف):</h4>
         <ol>
           <li>أضف البوت إلى مجموعتك على تيليغرام</li>
-          <li>استخدم <code>/students</code> لإدارة قائمة الطالبات</li>
+          <li>استخدم <code>/students</code> كطريقة موصى بها لإدارة قائمة الطالبات</li>
           <li>استخدم <code>/addstudent [معرّف] | [اسم]</code> لإضافة طالبات</li>
           <li>استخدم <code>/startlist [اسم]</code> لبدء جلسة حضور</li>
           <li>استخدم <code>/lessonstart</code> لرسالة افتتاح المجلس وتأكيد الحضور</li>
@@ -224,7 +224,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/students</div>
-        <div class="desc">عرض قائمة الطالبات مع خيارات إضافة/حذف/تعديل</div>
+        <div class="desc">الطريقة الموصى بها لإدارة قائمة الطالبات مع خيارات إضافة/حذف/تعديل</div>
       </div>
 
       <div class="command">
@@ -233,8 +233,8 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
-        <div class="cmd">/removestudent [اسم]</div>
-        <div class="desc">حذف طالبة أو أكثر — يمكن فصل الأسماء بسطر جديد أو فاصلة</div>
+        <div class="cmd">/removestudent [اسم أو معرّف]</div>
+        <div class="desc">حذف احتياطي لطالبة أو أكثر — يمكن فصل الإدخالات بسطر جديد أو فاصلة</div>
       </div>
 
       <div class="command">
