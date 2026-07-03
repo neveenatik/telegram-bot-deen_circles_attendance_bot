@@ -18,7 +18,7 @@ const commands = [
   { command: 'lessonstart', description: 'رسالة افتتاح المجلس مع تأكيد الحضور (للمشرف)' },
   { command: 'startless', description: 'مرادف سريع لـ lessonstart (للمشرف)' },
   { command: 'lessonreminder', description: 'إرسال نقطة متابعة أثناء المجلس (للمشرف)' },
-  { command: 'stopregistration', description: 'إيقاف تسجيل الحضور (للمشرف)' },
+  { command: 'freezelist', description: 'تجميد تسجيل الحضور (للمشرف)' },
   { command: 'editlist', description: 'تعديل حالات الحضور (للمشرف)' },
   { command: 'stoplist', description: 'إنهاء الحلقة الحالية (للمشرف)' },
 

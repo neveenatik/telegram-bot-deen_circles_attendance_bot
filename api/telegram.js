@@ -337,8 +337,8 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
-        <div class="cmd">/stopregistration</div>
-        <div class="desc">إيقاف تسجيل الحضور مؤقتاً في الجلسة النشطة</div>
+        <div class="cmd">/freezelist</div>
+        <div class="desc">تجميد تسجيل الحضور مؤقتاً في الجلسة النشطة</div>
       </div>
 
       <h3>📊 السجلات والتقارير</h3>
