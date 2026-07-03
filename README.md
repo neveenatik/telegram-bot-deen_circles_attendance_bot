@@ -212,6 +212,25 @@ node scripts/audit-v2-fixes.js --yes --stale-ms=300000
 - تنظيف حقول الحلّ في الطلبات المعلقة `pending` إذا كانت ممتلئة بالخطأ.
 - تحويل `processed_updates` العالقة بحالة `processing` إلى `failed` بعد انتهاء مهلة stale-lock.
 
+#### Backfill عكسي إلى KV (للرجوع إلى V1 عند الطوارئ)
+
+إذا احتجت rollback إلى نسخة تعتمد KV، يمكنك إعادة بناء مفاتيح KV من جداول V2:
+
+```bash
+# فحص فقط (بدون كتابة)
+npm run backfill-v1:check
+
+# تنفيذ فعلي
+npm run backfill-v1
+
+# تنفيذ لمجموعة واحدة فقط
+node scripts/backfill-v1-from-v2.js --yes --group=-1001234567890
+```
+
+ملاحظات:
+- السكربت يعيد بناء مفاتيح: `master`, `teachers`, `pendingregistrations`, `current`, `sessions`, `series`, `pageprogress`, `grouprecitation`, `activity`, و `await:*`.
+- يعيد أيضاً `processedupdate:*` فقط عند التشغيل بدون `--group` لأن هذه البيانات global وليست مرتبطة بمجموعة واحدة.
+
 ### تنظيف البيانات غير المستخدمة
 
 بدلاً من حذف بيانات المجموعة فور إزالة البوت منها، يتتبع البوت آخر نشاط لكل مجموعة. يمكنك حذف بيانات المجموعات غير النشطة منذ 90 يوماً أو أكثر عبر:

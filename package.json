@@ -9,6 +9,8 @@
     "set-commands": "node scripts/set-commands.js",
     "migrate-v2:check": "node scripts/migrate-kv-to-v2.js",
     "migrate-v2": "node scripts/migrate-kv-to-v2.js --yes",
+    "backfill-v1:check": "node scripts/backfill-v1-from-v2.js",
+    "backfill-v1": "node scripts/backfill-v1-from-v2.js --yes",
     "audit-v2:check": "node scripts/audit-v2-fixes.js",
     "audit-v2:fix": "node scripts/audit-v2-fixes.js --yes",
     "clear-kv:check": "node scripts/clear-kv.js",
