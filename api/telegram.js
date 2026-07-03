@@ -275,6 +275,16 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
+        <div class="cmd">/assignteacher [الاسم] | [النوع]</div>
+        <div class="desc">تغيير نوع معلمة أو أكثر — سطر لكل إدخال</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/removeteacher [الاسم]</div>
+        <div class="desc">حذف معلمة أو أكثر — يمكن فصل الأسماء بسطر جديد أو فاصلة</div>
+      </div>
+
+      <div class="command">
         <div class="cmd">/listteachers</div>
         <div class="desc">عرض جميع المعلمات مجمعة حسب النوع</div>
       </div>
@@ -326,6 +336,11 @@ const HTML_DOCS = `<!DOCTYPE html>
         <div class="desc">تعديل حالات الحضور للطالبات الفرديات</div>
       </div>
 
+      <div class="command">
+        <div class="cmd">/stopregistration</div>
+        <div class="desc">إيقاف تسجيل الحضور مؤقتاً في الجلسة النشطة</div>
+      </div>
+
       <h3>📊 السجلات والتقارير</h3>
       <div class="command">
         <div class="cmd">/classhistory [رقم الدورة]</div>
@@ -340,6 +355,16 @@ const HTML_DOCS = `<!DOCTYPE html>
       <div class="command">
         <div class="cmd">/newclass</div>
         <div class="desc">بدء دورة جديدة (يزيد رقم الدورة، والسجلات القديمة تبقى في الأرشيف ولا تُحذف)</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/removeclassrecord [رقم السجل]</div>
+        <div class="desc">حذف سجل حلقة من الدورة الحالية (بتأكيد، لمنشئ المجموعة)</div>
+      </div>
+
+      <div class="command">
+        <div class="cmd">/removestudentrecord [رقم السجل] | [الاسم]</div>
+        <div class="desc">حذف سجل طالبة من سجل الدورة الحالية (بتأكيد، لمنشئ المجموعة)</div>
       </div>
     </section>
 
