@@ -47,7 +47,7 @@ const commands = [
   // History and lifecycle
   { command: 'newclass', description: 'بدء دورة جديدة مع حفظ السجلات السابقة (لمنشئ المجموعة)' },
   { command: 'classhistory', description: 'عرض سجلات الدورة (الحالية افتراضياً أو محددة) (للمشرف)' },
-  { command: 'studentshistory', description: 'عرض سجل الجلسات (للمشرف)' },
+  { command: 'studentshistory', description: 'تقرير الطالبات: حضور الحلقة الرئيسية ومجموعة التدريب وآخر آية (للمشرف)' },
   { command: 'removeclassrecord', description: 'حذف سجل حلقة من الدورة الحالية (لمنشئ المجموعة)' },
   { command: 'removestudentrecord', description: 'حذف سجل طالبة من الدورة الحالية (لمنشئ المجموعة)' },
 

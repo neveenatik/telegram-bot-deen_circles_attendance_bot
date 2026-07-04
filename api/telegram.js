@@ -349,7 +349,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/studentshistory [رقم الدورة]</div>
-        <div class="desc">إحصائيات الحضور لكل طالبة (الدورة الحالية افتراضياً، أو من أرشيف السابق: /studentshistory 1)</div>
+        <div class="desc">تقرير لكل طالبة: حضور الحلقة الرئيسية + مجموعة التدريب + آخر آية (الدورة الحالية افتراضياً، أو من الأرشيف: /studentshistory 1)</div>
       </div>
 
       <div class="command">
