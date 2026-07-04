@@ -11,6 +11,7 @@ const commands = [
   // Session management
   { command: 'status', description: 'ملخص حالة المجموعة (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
+  { command: 'starttraininglist', description: 'بدء جلسة حضور في مجموعة التدريب (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },
   { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية (تصحيح التلاوة) للمسجلات (للمشرف)' },
   { command: 'startpersonalrecitation', description: 'بدء ختمة فردية وتعيين صفحات تلقائي (للمشرف)' },

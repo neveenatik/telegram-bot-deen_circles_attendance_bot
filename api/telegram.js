@@ -322,6 +322,11 @@ const HTML_DOCS = `<!DOCTYPE html>
       </div>
 
       <div class="command">
+        <div class="cmd">/starttraininglist [اسم]</div>
+        <div class="desc">بدء جلسة حضور في مجموعة التدريب (تستخدم قائمة المجموعة الخاصة)</div>
+      </div>
+
+      <div class="command">
         <div class="cmd">/stoplist</div>
         <div class="desc">إنهاء الجلسة الحالية وحفظ السجل</div>
       </div>
