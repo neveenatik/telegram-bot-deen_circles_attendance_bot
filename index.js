@@ -22,6 +22,11 @@ function extractCommand(ctx) {
   return raw.slice(1).split('@')[0].trim().toLowerCase() || null;
 }
 
+function isCommandDeleteError(err) {
+  const msg = getErrorDescription(err);
+  return /message to delete not found|message can't be deleted|not enough rights|MESSAGE_ID_INVALID|chat not found/i.test(msg);
+}
+
 bot.use(async (ctx, next) => {
   const cmd = extractCommand(ctx);
   if (cmd) {
@@ -36,6 +41,35 @@ bot.use(async (ctx, next) => {
     }));
   }
   return next();
+});
+
+// Keep group chats clean: delete the original /command message after processing.
+bot.use(async (ctx, next) => {
+  const cmd = extractCommand(ctx);
+  const chatType = ctx.chat?.type;
+  const messageId = ctx.message?.message_id;
+  const shouldDelete = Boolean(cmd)
+    && Boolean(messageId)
+    && (chatType === 'group' || chatType === 'supergroup');
+
+  await next();
+
+  if (!shouldDelete) return;
+
+  try {
+    await ctx.deleteMessage(messageId);
+  } catch (err) {
+    if (isCommandDeleteError(err)) return;
+    console.warn(JSON.stringify({
+      level: 'warn',
+      event: 'command_message_delete_failed',
+      command: cmd,
+      message: getErrorDescription(err),
+      chatId: ctx.chat?.id ? String(ctx.chat.id) : null,
+      userId: ctx.from?.id ? String(ctx.from.id) : null,
+      at: new Date().toISOString(),
+    }));
+  }
 });
 
 bot.use(async (ctx, next) => {
