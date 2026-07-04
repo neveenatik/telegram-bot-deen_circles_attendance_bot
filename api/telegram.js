@@ -506,6 +506,103 @@ const HTML_DOCS = `<!DOCTYPE html>
       <p><strong>الجماعية:</strong> ختمة واحدة موحدة يقرأها الجميع بالتسلسل—كل طالبة تقرأ صفحة واحدة، والجلسة التالية تستأنف من آخر صفحة تم قراءتها</p>
     </section>
 
+    <!-- Telegram Profile Guide -->
+    <section>
+      <h2>📱 دليل تغيير اسم الملف الشخصي في تيليغرام</h2>
+      <p style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
+        <strong>💡 للمستخدمات الكبيرات في السن:</strong> هذا الدليل خطوة بخطوة سهل جداً. اطلبي من أحدى بناتك أو أخواتك أن تساعدك في أول مرة.
+      </p>
+
+      <h3>🎯 الخطوة 1: افتحي تيليغرام</h3>
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.phone-bg { fill: white; } .app-icon { fill: #f0f0f0; stroke: #ccc; stroke-width: 2; } .app-icon-telegram { fill: #c8e6ff; stroke: #0088cc; stroke-width: 3; } .highlight-circle { fill: none; stroke: #ff0000; stroke-width: 4; } .guide-text { font-family: Arial, sans-serif; font-size: 20px; font-weight: bold; fill: #ff0000; } .emoji-text { font-size: 48px; } .arrow-line { stroke: #ff0000; stroke-width: 4; fill: none; }</style></defs>
+          <rect class="phone-bg" width="540" height="1080"/><rect fill="#f9f9f9" width="540" height="40"/><text x="20" y="28" font-size="14" fill="#999">9:41</text><g><rect class="app-icon" x="40" y="80" width="90" height="90" rx="12"/><text class="emoji-text" x="70" y="155">📧</text></g><g><rect class="app-icon" x="225" y="80" width="90" height="90" rx="12"/><text class="emoji-text" x="255" y="155">📸</text></g><g><rect class="app-icon" x="410" y="80" width="90" height="90" rx="12"/><text class="emoji-text" x="440" y="155">📱</text></g><g><rect class="app-icon-telegram" x="40" y="220" width="90" height="90" rx="12"/><text class="emoji-text" x="70" y="295">💬</text><circle class="highlight-circle" cx="85" cy="265" r="65"/></g><g><rect class="app-icon" x="225" y="220" width="90" height="90" rx="12"/><text class="emoji-text" x="255" y="295">📖</text></g><g><rect class="app-icon" x="410" y="220" width="90" height="90" rx="12"/><text class="emoji-text" x="440" y="295">⚙️</text></g><line class="arrow-line" x1="270" y1="160" x2="270" y2="210"/><polygon points="270,210 260,190 280,190" fill="#ff0000"/><text class="guide-text" x="20" y="450">ابحثي عن الأيقونة</text><text class="guide-text" x="20" y="480">الزرقاء 👇</text>
+        </svg>
+        <p><strong>ابحثي عن الأيقونة الزرقاء (💬) على شاشة هاتفك الرئيسية واضغطي عليها. تيليغرام سيفتح.</strong></p>
+      </div>
+
+      <h3>🎯 الخطوة 2: اضغطي على ملفك الشخصي</h3>
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.bg { fill: white; } .nav-bar { fill: white; stroke: #eee; stroke-width: 1; } .nav-icon { font-size: 24px; } .nav-active { fill: #0088cc; } .chat-item { fill: white; stroke: #eee; stroke-width: 1; } .avatar { fill: #0088cc; } .chat-name { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; } .chat-msg { font-family: Arial, sans-serif; font-size: 13px; fill: #999; } .highlight-circle { fill: none; stroke: #ff0000; stroke-width: 3; } .guide-text { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #ff0000; } .arrow-line { stroke: #ff0000; stroke-width: 3; fill: none; }</style></defs>
+          <rect class="bg" width="540" height="1080"/><rect fill="#f9f9f9" width="540" height="50" stroke="#eee" stroke-width="1"/><text class="chat-name" x="20" y="35">الرسائل</text><g class="chat-item"><rect y="50" width="540" height="80" fill="white" stroke="#eee" stroke-width="1"/><circle class="avatar" cx="490" cy="90" r="30"/><text class="chat-name" x="20" y="80">مريم محمد</text><text class="chat-msg" x="20" y="110">آخر رسالة...</text></g><g class="chat-item"><rect y="130" width="540" height="80" fill="white" stroke="#eee" stroke-width="1"/><circle class="avatar" cx="490" cy="170" r="30"/><text class="chat-name" x="20" y="160">فاطمة أحمد</text><text class="chat-msg" x="20" y="190">آخر رسالة...</text></g><g class="chat-item"><rect y="210" width="540" height="80" fill="white" stroke="#eee" stroke-width="1"/><circle class="avatar" cx="490" cy="250" r="30"/><text class="chat-name" x="20" y="240">عائشة علي</text><text class="chat-msg" x="20" y="270">آخر رسالة...</text></g><g class="chat-item"><rect y="290" width="540" height="80" fill="white" stroke="#eee" stroke-width="1"/><circle class="avatar" cx="490" cy="330" r="30"/><text class="chat-name" x="20" y="320">لمياء حسن</text><text class="chat-msg" x="20" y="350">آخر رسالة...</text></g><rect class="nav-bar" y="950" width="540" height="130"/><g text-anchor="middle"><text class="nav-icon" x="100" y="1000">💬</text><text class="nav-icon" x="200" y="1000">📞</text><text class="nav-icon" x="300" y="1000">🔍</text><circle class="highlight-circle" cx="440" cy="1015" r="40"/><text class="nav-icon nav-active" x="440" y="1000">👤</text></g><line class="arrow-line" x1="380" y1="880" x2="420" y2="950"/><polygon points="420,950 410,925 430,935" fill="#ff0000"/><text class="guide-text" x="20" y="520">هنا ملفك</text>
+        </svg>
+        <p><strong>في الأسفل ستجدين 4 أيقونات صغيرة. الأيقونة الأخيرة على اليسار 👤 هي ملفك الشخصي. اضغطي عليها.</strong></p>
+      </div>
+
+      <h3>🎯 الخطوة 3: ادخلي صفحة الملف الشخصي</h3>
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.bg { fill: white; } .header { fill: #0088cc; } .profile-pic { fill: #8ab4f8; } .text-label { font-family: Arial, sans-serif; font-size: 14px; fill: #999; } .text-value { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; } .button { fill: #0088cc; stroke: none; } .button-text { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: white; } .stat-value { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #0088cc; } .stat-label { font-family: Arial, sans-serif; font-size: 12px; fill: #999; }</style></defs>
+          <rect class="bg" width="540" height="1080"/><rect class="header" width="540" height="60"/><text class="button-text" x="20" y="40">← الملف الشخصي</text><circle class="profile-pic" cx="270" cy="140" r="60"/><text style="font-size: 48px; text-anchor: middle;" x="270" y="150">👩</text><text class="text-label" x="40" y="240">الاسم</text><text class="text-value" x="40" y="270">أم فاطمة محمد</text><line stroke="#eee" stroke-width="1" x1="40" y1="280" x2="500" y2="280"/><text class="text-label" x="40" y="320">معرّف المستخدم</text><text class="text-value" x="40" y="350">@umfatima2024</text><line stroke="#eee" stroke-width="1" x1="40" y1="360" x2="500" y2="360"/><g text-anchor="middle"><text class="stat-value" x="135" y="440">145</text><text class="stat-label" x="135" y="460">جهات اتصال</text><text class="stat-value" x="270" y="440">89</text><text class="stat-label" x="270" y="460">مجموعات</text><text class="stat-value" x="405" y="440">342</text><text class="stat-label" x="405" y="460">رسائل</text></g><text class="text-label" x="40" y="520">نبذة</text><text class="text-value" x="40" y="550">طالبة علم وأم ومعلمة</text><line stroke="#eee" stroke-width="1" x1="40" y1="560" x2="500" y2="560"/><rect class="button" x="120" y="650" width="300" height="50" rx="8"/><text class="button-text" x="270" y="682" text-anchor="middle">✏️ تعديل الملف</text>
+        </svg>
+        <p><strong>هنا صفحة ملفك الشخصي. تجدين اسمك والمعلومات عنك. اضغطي على الزر الأزرق "تعديل الملف".</strong></p>
+      </div>
+
+      <h3>🎯 الخطوة 4: غيّري الاسم</h3>
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.bg { fill: white; } .header { fill: #0088cc; } .text-label { font-family: Arial, sans-serif; font-size: 14px; fill: #999; } .input-field { fill: #f5f5f5; stroke: #ddd; stroke-width: 2; } .input-text { font-family: Arial, sans-serif; font-size: 16px; fill: #333; } .button { fill: #0088cc; stroke: none; } .button-text { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: white; } .arrow { stroke: #ff0000; stroke-width: 3; fill: none; } .arrow-head { fill: #ff0000; } .guide { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #ff0000; }</style></defs>
+          <rect class="bg" width="540" height="1080"/><rect class="header" width="540" height="60"/><text class="button-text" x="20" y="40">← تعديل</text><text class="text-label" x="40" y="120">الاسم الأول</text><rect class="input-field" x="40" y="140" width="460" height="50" rx="6"/><text class="input-text" x="60" y="175">أم فاطمة</text><text class="text-label" x="40" y="240">الاسم الأخير</text><rect class="input-field" x="40" y="260" width="460" height="50" rx="6"/><text class="input-text" x="60" y="295">محمد</text><text class="text-label" x="40" y="360">نبذة</text><rect class="input-field" x="40" y="380" width="460" height="80" rx="6"/><text class="input-text" x="60" y="410">طالبة علم وأم</text><text class="input-text" x="60" y="435">معلمة قرآن</text><line class="arrow" x1="380" y1="120" x2="420" y2="140"/><polygon class="arrow-head" points="420,140 410,125 415,140"/><text class="guide" x="20" y="100">ادخلي الاسم</text><rect class="button" x="120" y="550" width="300" height="50" rx="8"/><text class="button-text" x="270" y="582" text-anchor="middle">💾 حفظ التعديلات</text>
+        </svg>
+        <p><strong>الآن سترين حقل "الاسم الأول". اضغطي عليه وامسحي الاسم القديم ثم اكتبي الاسم الجديد.</strong></p>
+        <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 1rem; margin: 1rem 0; border-radius: 4px;">
+          <strong>💡 نصيحة:</strong> يمكنك تغيير الاسم الأول فقط أو الاسم الأخير أو كليهما. اختاري ما يناسبك.
+        </div>
+      </div>
+
+      <h3>🎯 الخطوة 5: احفظي التعديلات</h3>
+      <div style="background: #f9f9f9; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.bg { fill: white; } .header { fill: #0088cc; } .text-label { font-family: Arial, sans-serif; font-size: 14px; fill: #999; } .input-field { fill: #f5f5f5; stroke: #ddd; stroke-width: 2; } .input-text { font-family: Arial, sans-serif; font-size: 16px; fill: #333; } .button { fill: #4CAF50; stroke: none; } .button-highlight { fill: none; stroke: #ff0000; stroke-width: 4; } .button-text { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: white; } .arrow { stroke: #ff0000; stroke-width: 3; fill: none; } .arrow-head { fill: #ff0000; } .guide { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #ff0000; }</style></defs>
+          <rect class="bg" width="540" height="1080"/><rect class="header" width="540" height="60"/><text class="button-text" x="20" y="40">← تعديل</text><text class="text-label" x="40" y="120">الاسم الأول</text><rect class="input-field" x="40" y="140" width="460" height="50" rx="6"/><text class="input-text" x="60" y="175">أم محمد</text><text class="text-label" x="40" y="240">الاسم الأخير</text><rect class="input-field" x="40" y="260" width="460" height="50" rx="6"/><text class="input-text" x="60" y="295">علي</text><text class="text-label" x="40" y="360">نبذة</text><rect class="input-field" x="40" y="380" width="460" height="80" rx="6"/><text class="input-text" x="60" y="410">معلمة قرآن</text><rect class="button-highlight" x="110" y="540" width="320" height="60" rx="8"/><rect class="button" x="120" y="550" width="300" height="50" rx="8"/><text class="button-text" x="270" y="582" text-anchor="middle">💾 حفظ التعديلات</text><line class="arrow" x1="380" y1="480" x2="420" y2="540"/><polygon class="arrow-head" points="420,540 410,515 420,530"/><text class="guide" x="20" y="440">اضغطي الزر</text><text class="guide" x="20" y="470">الأخضر</text>
+        </svg>
+        <p><strong>بعد كتابة الاسم الجديد، اضغطي على الزر الأخضر "حفظ التعديلات" في الأسفل.</strong></p>
+      </div>
+
+      <h3>✅ تم! اسمك الجديد حفظ بنجاح</h3>
+      <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
+        <svg viewBox="0 0 540 1080" xmlns="http://www.w3.org/2000/svg" style="max-width: 300px; height: auto; margin: 1rem 0;">
+          <defs><style>.bg { fill: white; } .success-banner { fill: #4CAF50; } .banner-text { font-family: Arial, sans-serif; font-size: 20px; font-weight: bold; fill: white; } .profile-pic { fill: #8ab4f8; } .text-label { font-family: Arial, sans-serif; font-size: 14px; fill: #999; } .text-value { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; } .checkmark { fill: #4CAF50; } .guide { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; fill: #4CAF50; }</style></defs>
+          <rect class="bg" width="540" height="1080"/><rect class="success-banner" width="540" height="100"/><text class="banner-text" x="270" y="40" text-anchor="middle">✅ تم تحديث الملف!</text><text class="banner-text" x="270" y="70" text-anchor="middle" style="font-size: 18px;">حفظ التعديلات بنجاح</text><circle class="profile-pic" cx="270" cy="200" r="60"/><text style="font-size: 48px; text-anchor: middle;" x="270" y="210">👩</text><text class="text-label" x="40" y="300">الاسم الجديد</text><text class="text-value" x="40" y="330">أم محمد علي</text><line stroke="#eee" stroke-width="1" x1="40" y1="340" x2="500" y2="340"/><text class="text-label" x="40" y="380">معرّف المستخدم</text><text class="text-value" x="40" y="410">@umfatima2024</text><line stroke="#eee" stroke-width="1" x1="40" y1="420" x2="500" y2="420"/><text class="text-label" x="40" y="460">نبذة</text><text class="text-value" x="40" y="490">معلمة قرآن</text><line stroke="#eee" stroke-width="1" x1="40" y1="500" x2="500" y2="500"/><circle fill="none" stroke="#4CAF50" stroke-width="3" cx="270" cy="600" r="50"/><text style="font-size: 60px; text-anchor: middle;" x="270" y="615">✓</text><text class="guide" x="270" y="700" text-anchor="middle">تم الحفظ بنجاح! 🎉</text><text style="font-family: Arial; font-size: 16px; fill: #666; text-anchor: center;" x="270" y="740">يمكنك إغلاق الشاشة</text>
+        </svg>
+        <p><strong>🎉 تهانينا! لقد تم تغيير اسمك بنجاح!</strong></p>
+        <p style="margin-top: 1rem; font-size: 0.95rem;">الآن سيرى جميع أصدقاؤك في تيليغرام اسمك الجديد عند فتح ملفك الشخصي.</p>
+      </div>
+
+      <h3>❓ نصائح مهمة</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="card" style="background: #f0f4ff; border-top: 4px solid #667eea;">
+          <h4>✏️ يمكنك تغيير الاسم</h4>
+          <p>في أي وقت تريدين!</p>
+        </div>
+        <div class="card" style="background: #f0f4ff; border-top: 4px solid #667eea;">
+          <h4>👤 الاسم خاص بك</h4>
+          <p>لا أحد يراه سوى أصدقاؤك في تيليغرام</p>
+        </div>
+        <div class="card" style="background: #f0f4ff; border-top: 4px solid #667eea;">
+          <h4>🔤 اختاري اسم واضح</h4>
+          <p>يتعرّف به أصدقاؤك عليك</p>
+        </div>
+        <div class="card" style="background: #f0f4ff; border-top: 4px solid #667eea;">
+          <h4>📱 تطبيق واحد</h4>
+          <p>هذه التعديلات لا تؤثر على البرامج الأخرى</p>
+        </div>
+      </div>
+
+      <h3>🆘 إذا واجهتِ مشكلة</h3>
+      <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1.5rem; border-radius: 4px;">
+        <p><strong>🔄 إذا لم يحفظ التعديل:</strong></p>
+        <ol style="margin-left: 1.5rem; margin-top: 0.5rem;">
+          <li>تأكدي من اتصالك بالإنترنت</li>
+          <li>جربي إغلاق التطبيق وفتحه مرة أخرى</li>
+          <li>قد يأخذ وقت ليحدّث الآخرون اسمك الجديد (ساعة أو ساعتين)</li>
+        </ol>
+        <p style="margin-top: 1rem;"><strong>💬 تحتاجين مساعدة؟</strong> استخدمي الأمر <code>/feedback</code> لإرسال رسالة دعم.</p>
+      </div>
+    </section>
+
     <!-- Support -->
     <section>
       <h2>🆘 الدعم والمساعدة</h2>
