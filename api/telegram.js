@@ -328,7 +328,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/status</div>
-        <div class="desc">عرض ملخص الجلسة الحالية</div>
+        <div class="desc">ملخص حالة المجموعة</div>
       </div>
 
       <div class="command">

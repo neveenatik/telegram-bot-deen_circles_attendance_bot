@@ -9,7 +9,7 @@ const commands = [
   { command: 'myid', description: 'عرض رقم حسابك للتسجيل اليدوي' },
 
   // Session management
-  { command: 'status', description: 'ملخص حالة الجلسة الحالية (للمشرف)' },
+  { command: 'status', description: 'ملخص حالة المجموعة (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },
   { command: 'startsecondarylist', description: 'بدء قائمة للحلقات الثانوية (تصحيح التلاوة) للمسجلات (للمشرف)' },
