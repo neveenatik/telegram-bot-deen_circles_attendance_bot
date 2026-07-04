@@ -18,6 +18,7 @@ create table if not exists groups (
 create table if not exists group_settings (
   group_id bigint primary key references groups(id) on delete cascade,
   checkpoint_counts_as_present_for text[] not null default array['main']::text[],
+  training_groups jsonb not null default '[]'::jsonb,
   retention_days integer not null default 90,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
