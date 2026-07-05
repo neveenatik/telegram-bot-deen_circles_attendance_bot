@@ -81,6 +81,7 @@ bot.use(async (ctx, next) => {
 
     const messageId = ctx.message?.message_id;
     const from = ctx.from;
+    const cmd = extractCommand(ctx);
 
     if (
       messageId
@@ -102,10 +103,41 @@ bot.use(async (ctx, next) => {
         }
       }
 
-      if (activeType && session && await isAdmin(ctx)) {
-        if (!Array.isArray(session.actionMessageIds)) session.actionMessageIds = [];
-        if (!session.actionMessageIds.includes(messageId)) {
-          session.actionMessageIds.push(messageId);
+      if (activeType && session) {
+        let changed = false;
+
+        // Track per-user message activity during active sessions.
+        // Command messages are excluded from activity counters.
+        if (!cmd) {
+          const userId = String(from.id);
+          if (!session.activityByUserId || typeof session.activityByUserId !== 'object') {
+            session.activityByUserId = {};
+          }
+
+          const existing = session.activityByUserId[userId] && typeof session.activityByUserId[userId] === 'object'
+            ? session.activityByUserId[userId]
+            : null;
+          const displayName = [from.first_name, from.last_name].filter(Boolean).join(' ').trim() || null;
+
+          session.activityByUserId[userId] = {
+            count: (Number(existing?.count) || 0) + 1,
+            name: displayName,
+            username: from.username || null,
+            lastMessageId: messageId,
+            lastActiveAt: new Date().toISOString(),
+          };
+          changed = true;
+        }
+
+        if (await isAdmin(ctx)) {
+          if (!Array.isArray(session.actionMessageIds)) session.actionMessageIds = [];
+          if (!session.actionMessageIds.includes(messageId)) {
+            session.actionMessageIds.push(messageId);
+            changed = true;
+          }
+        }
+
+        if (changed) {
           await storage.saveSession(groupId, activeType, session);
         }
       }
