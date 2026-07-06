@@ -3,6 +3,8 @@
 import bot from '../index.js';
 import storage from '../lib/storage.js';
 
+export const maxDuration = 60;
+
 const HTML_DOCS = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
