@@ -12,6 +12,30 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ERROR_NOTICE_COOLDOWN_MS = 30000;
 const lastErrorNoticeByChat = new Map();
 
+function assertStorageContract(storageImpl) {
+  const required = [
+    'getSession',
+    'saveSession',
+    'touchGroupActivity',
+    'beginUpdateProcessing',
+    'completeUpdateProcessing',
+    'failUpdateProcessing',
+  ];
+  const missing = required.filter((name) => typeof storageImpl?.[name] !== 'function');
+  if (!missing.length) return;
+
+  console.error(JSON.stringify({
+    level: 'error',
+    event: 'storage_contract_invalid',
+    missing,
+    availableKeys: Object.keys(storageImpl || {}).sort(),
+    at: new Date().toISOString(),
+  }));
+  throw new Error(`Invalid storage implementation: missing ${missing.join(', ')}`);
+}
+
+assertStorageContract(storage);
+
 function extractCommand(ctx) {
   const message = ctx.message;
   if (!message?.text || !Array.isArray(message.entities)) return null;
@@ -147,6 +171,7 @@ bot.use(async (ctx, next) => {
       level: 'warn',
       event: 'middleware_activity_tracking_failed',
       message: getErrorDescription(err),
+      stack: err?.stack || null,
       chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
       userId: ctx?.from?.id ? String(ctx.from.id) : null,
       at: new Date().toISOString(),
@@ -164,6 +189,7 @@ bot.catch((err, ctx) => {
     level: 'error',
     event: 'bot_error',
     message: getErrorDescription(err),
+    stack: err?.stack || null,
     updateType: ctx?.updateType || null,
     command: extractCommand(ctx),
     chatId: ctx?.chat?.id ? String(ctx.chat.id) : null,
