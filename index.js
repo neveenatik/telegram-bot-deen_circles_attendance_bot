@@ -153,14 +153,6 @@ bot.use(async (ctx, next) => {
           changed = true;
         }
 
-        if (await isAdmin(ctx)) {
-          if (!Array.isArray(session.actionMessageIds)) session.actionMessageIds = [];
-          if (!session.actionMessageIds.includes(messageId)) {
-            session.actionMessageIds.push(messageId);
-            changed = true;
-          }
-        }
-
         if (changed) {
           await storage.saveSession(groupId, activeType, session);
         }
