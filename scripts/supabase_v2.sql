@@ -302,3 +302,22 @@ alter table member_progress enable row level security;
 alter table group_progress enable row level security;
 alter table await_prompts enable row level security;
 alter table processed_updates enable row level security;
+
+-- ─── Scheduled retention: prune processed_updates ─────────────────────────────
+-- The processed_updates table is a dedup ledger for at-least-once webhook
+-- delivery. A row only matters while Telegram might redeliver the same
+-- update_id (minutes, not days), so old rows are safe to delete.
+--   • non-failed rows: pruned after 1 day
+--   • failed rows: kept 30 days for debugging
+-- Runs daily via pg_cron (Supabase Cron).
+create extension if not exists pg_cron;
+
+select cron.schedule(
+  'prune_processed_updates',
+  '0 3 * * *',
+  $$
+    delete from processed_updates
+    where (status <> 'failed' and coalesce(processed_at, updated_at) < now() - interval '1 day')
+       or (status =  'failed' and coalesce(processed_at, updated_at) < now() - interval '30 days')
+  $$
+);
