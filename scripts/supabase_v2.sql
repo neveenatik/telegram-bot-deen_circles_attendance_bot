@@ -17,7 +17,6 @@ create table if not exists groups (
 
 create table if not exists group_settings (
   group_id bigint primary key references groups(id) on delete cascade,
-  checkpoint_counts_as_present_for text[] not null default array['main']::text[],
   training_groups jsonb not null default '[]'::jsonb,
   retention_days integer not null default 90,
   created_at timestamptz not null default now(),
@@ -120,7 +119,7 @@ create table if not exists session_messages (
   message_kind text not null,
   created_at timestamptz not null default now(),
   unique (session_id, message_id),
-  check (message_kind in ('widget', 'list', 'action', 'checkpoint', 'admin'))
+  check (message_kind in ('widget', 'list', 'action', 'admin'))
 );
 
 -- Session participants, one row per member (or guest) per session
@@ -153,32 +152,6 @@ create unique index if not exists uq_session_participants_guest
 
 create index if not exists idx_session_participants_session on session_participants (session_id);
 create index if not exists idx_session_participants_display_name on session_participants (session_id, display_name);
-
--- Checkpoints and confirmations
-create table if not exists checkpoints (
-  id bigserial primary key,
-  session_id uuid not null references sessions(id) on delete cascade,
-  checkpoint_seq integer not null,
-  checkpoint_kind text not null,
-  message_id bigint,
-  created_at timestamptz not null default now(),
-  check (checkpoint_seq > 0),
-  check (checkpoint_kind in ('start', 'reminder')),
-  unique (session_id, checkpoint_seq)
-);
-
-create table if not exists checkpoint_confirmations (
-  id bigserial primary key,
-  checkpoint_id bigint not null references checkpoints(id) on delete cascade,
-  member_id bigint not null references members(id) on delete cascade,
-  confirmed_at timestamptz not null default now(),
-  source text not null default 'button',
-  unique (checkpoint_id, member_id),
-  check (source in ('button', 'admin'))
-);
-
-create index if not exists idx_checkpoint_confirmations_member
-  on checkpoint_confirmations (member_id, confirmed_at desc);
 
 -- Cross-session recitation progress per member
 create table if not exists member_progress (
@@ -296,8 +269,6 @@ alter table pending_registrations enable row level security;
 alter table sessions enable row level security;
 alter table session_messages enable row level security;
 alter table session_participants enable row level security;
-alter table checkpoints enable row level security;
-alter table checkpoint_confirmations enable row level security;
 alter table member_progress enable row level security;
 alter table group_progress enable row level security;
 alter table await_prompts enable row level security;

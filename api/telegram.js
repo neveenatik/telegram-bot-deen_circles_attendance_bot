@@ -165,8 +165,6 @@ const HTML_DOCS = `<!DOCTYPE html>
           <li>استخدم <code>/students</code> كطريقة موصى بها لإدارة قائمة الطالبات</li>
           <li>استخدم <code>/addstudent [رقم الحساب] | [الاسم]</code> لإضافة طالبات</li>
           <li>استخدم <code>/startlist [اسم]</code> لبدء جلسة حضور</li>
-          <li>استخدم <code>/lessonstart</code> لرسالة افتتاح المجلس وتأكيد الحضور</li>
-          <li>استخدم <code>/lessonreminder</code> لنقاط المتابعة أثناء المجلس</li>
           <li>اضغط الأزرار لتسجيل حالات الحضور</li>
           <li>استخدم <code>/stoplist</code> لإنهاء الجلسة</li>
         </ol>
@@ -252,22 +250,6 @@ const HTML_DOCS = `<!DOCTYPE html>
       <div class="command">
         <div class="cmd">/myid</div>
         <div class="desc">إظهار معرّف الطالبة للتسجيل اليدوي (كخيار احتياطي أثناء تثبيت نظام /register)</div>
-      </div>
-
-      <h3>🕰️ متابعة المجلس</h3>
-      <div class="command">
-        <div class="cmd">/lessonstart</div>
-        <div class="desc">رسالة افتتاح المجلس مع تذكير بالنية وزر تأكيد الحضور</div>
-      </div>
-
-      <div class="command">
-        <div class="cmd">/startless</div>
-        <div class="desc">مرادف سريع للأمر /lessonstart بنفس الوظيفة</div>
-      </div>
-
-      <div class="command">
-        <div class="cmd">/lessonreminder</div>
-        <div class="desc">إرسال نقطة متابعة جديدة أثناء المجلس مع زر تأكيد المتابعة</div>
       </div>
 
       <h3>🎤 إدارة المعلمات</h3>
