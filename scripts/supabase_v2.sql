@@ -112,17 +112,6 @@ create unique index if not exists uq_sessions_group_active
 create index if not exists idx_sessions_group_started_at on sessions (group_id, started_at desc);
 create index if not exists idx_sessions_group_type on sessions (group_id, session_type);
 
--- All bot messages associated with a session (for cleanup and tracking)
-create table if not exists session_messages (
-  id bigserial primary key,
-  session_id uuid not null references sessions(id) on delete cascade,
-  message_id bigint not null,
-  message_kind text not null,
-  created_at timestamptz not null default now(),
-  unique (session_id, message_id),
-  check (message_kind in ('widget', 'list', 'action', 'admin'))
-);
-
 -- Session participants, one row per member (or guest) per session
 create table if not exists session_participants (
   id bigserial primary key,
@@ -268,7 +257,6 @@ alter table members enable row level security;
 alter table teachers enable row level security;
 alter table pending_registrations enable row level security;
 alter table sessions enable row level security;
-alter table session_messages enable row level security;
 alter table session_participants enable row level security;
 alter table member_progress enable row level security;
 alter table group_progress enable row level security;
