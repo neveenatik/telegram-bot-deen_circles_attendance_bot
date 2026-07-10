@@ -3,7 +3,7 @@ import requireNextInTelegrafMiddleware from './eslint-rules/require-next-in-tele
 export default [
   {
     files: ['**/*.js'],
-    ignores: ['node_modules/**', 'data/**'],
+    ignores: ['node_modules/**'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',

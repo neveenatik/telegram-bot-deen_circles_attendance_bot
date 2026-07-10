@@ -1,5 +1,4 @@
 .env
 node_modules/
-data/
 scripts/tmp
 */.DS_Store
