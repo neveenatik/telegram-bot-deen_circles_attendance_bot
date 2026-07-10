@@ -48,7 +48,7 @@ npm run set-commands
 إذا أردت تشغيل البوت على Vercel بدل التشغيل المحلي، اتبع الخطوات التالية:
 
 1. أنشئ مشروعاً جديداً في Supabase.
-2. نفّذ ملف [supabase.sql](scripts/supabase.sql) داخل SQL Editor لإنشاء جدول `kv`.
+2. نفّذ ملف [supabase_v2.sql](scripts/supabase_v2.sql) داخل SQL Editor لإنشاء جداول مخطط V2.
 3. انسخ `SUPABASE_URL` من الصفحة الرئيسية للمشروع في Supabase.
 4. انسخ `SUPABASE_SERVICE_ROLE_KEY` من Settings → API → Legacy anon, service_role API keys.
 5. ارفع المشروع إلى GitHub ثم اربطه مع Vercel.
@@ -141,8 +141,7 @@ telegram-bot/
 ├── scripts/
 │   ├── set-commands.js   ← تسجيل قائمة الأوامر (تشغيل محلي، كلما تغيّرت الأوامر)
 │   ├── set-webhook.js    ← ضبط webhook على Vercel (مرة واحدة بعد النشر)
-│   ├── clear-kv.js       ← حذف جميع البيانات المخزنة (استخدم بحذر!)
-│   └── supabase.sql      ← إنشاء جدول التخزين في Supabase
+│   └── supabase_v2.sql   ← إنشاء جداول مخطط V2 في Supabase
 ├── lib/
 │   ├── storage.js        ← طبقة التخزين (ملفات JSON أو Supabase)
 │   ├── text.js           ← النصوص والرسائل بالعربية والإنجليزية
@@ -168,35 +167,12 @@ telegram-bot/
 |--------|-----------|--------|
 | `set-commands.js` | بعد تثبيت البوت محلياً أو كلما أضفت/عدّلت الأوامر | `npm run set-commands` |
 | `set-webhook.js` | مرة واحدة بعد نشر المشروع على Vercel (أو عند تغيير الدومين) | `npm run set-webhook -- <your-vercel-url>` |
-| `clear-kv.js` | لحذف جميع البيانات المخزنة (استخدم بحذر جداً!) | `npm run clear-kv` |
 | `cleanup-stale-groups.js` | لحذف بيانات المجموعات غير النشطة منذ 90 يوماً أو أكثر (فحص آمن أولاً) | `npm run cleanup-stale-groups:check` ثم `npm run cleanup-stale-groups` |
 
 ### مخطط التخزين الجديد (V2)
 
 - المخطط العلاقي الجديد موجود في [scripts/supabase_v2.sql](scripts/supabase_v2.sql).
 - خطة الترحيل المرحلية موجودة في [docs/storage-v2-migration-plan.md](docs/storage-v2-migration-plan.md).
-- قبل التنفيذ في الإنتاج: خذ نسخة احتياطية من جدول `kv` ثم نفّذ مخطط V2، وبعدها ابدأ الترحيل على مراحل (backfill ثم dual-write ثم switch).
-
-#### تشغيل Backfill من KV إلى V2
-
-```bash
-# 1) تنفيذ مخطط V2 أولاً داخل Supabase SQL Editor
-# scripts/supabase_v2.sql
-
-# 2) فحص آمن (بدون كتابة)
-npm run migrate-v2:check
-
-# 3) تنفيذ فعلي للترحيل
-npm run migrate-v2
-
-# 4) تنفيذ على مجموعة محددة فقط (اختياري)
-node scripts/migrate-kv-to-v2.js --yes --group=-1001234567890
-```
-
-ملاحظات مهمة:
-- الترحيل يستخدم upsert قدر الإمكان ليكون آمناً عند إعادة التشغيل.
-- يفضَّل إيقاف كتابة الإنتاج مؤقتاً أثناء backfill لتقليل تعارضات التوقيت.
-- لا تحذف جدول `kv` إلا بعد مرحلة dual-write والتحقق الكامل من المطابقة.
 
 #### ملاحظة ترقية (Training Groups)
 
@@ -237,25 +213,6 @@ node scripts/audit-v2-fixes.js --yes --stale-ms=300000
 - ربط `session_participants` غير المربوطة بعضو عند تطابق الاسم داخل نفس المجموعة.
 - تنظيف حقول الحلّ في الطلبات المعلقة `pending` إذا كانت ممتلئة بالخطأ.
 - تحويل `processed_updates` العالقة بحالة `processing` إلى `failed` بعد انتهاء مهلة stale-lock.
-
-#### Backfill عكسي إلى KV (للرجوع إلى V1 عند الطوارئ)
-
-إذا احتجت rollback إلى نسخة تعتمد KV، يمكنك إعادة بناء مفاتيح KV من جداول V2:
-
-```bash
-# فحص فقط (بدون كتابة)
-npm run backfill-v1:check
-
-# تنفيذ فعلي
-npm run backfill-v1
-
-# تنفيذ لمجموعة واحدة فقط
-node scripts/backfill-v1-from-v2.js --yes --group=-1001234567890
-```
-
-ملاحظات:
-- السكربت يعيد بناء مفاتيح: `master`, `teachers`, `pendingregistrations`, `current`, `sessions`, `series`, `pageprogress`, `grouprecitation`, `activity`, و `await:*`.
-- يعيد أيضاً `processedupdate:*` فقط عند التشغيل بدون `--group` لأن هذه البيانات global وليست مرتبطة بمجموعة واحدة.
 
 ### تنظيف البيانات غير المستخدمة
 

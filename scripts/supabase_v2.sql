@@ -1,5 +1,6 @@
 -- Supabase relational schema v2 for telegram attendance bot
--- Run in Supabase SQL editor after backing up kv table.
+-- Bootstrap schema for new environments. For changes to existing databases,
+-- add an ordered migration under scripts/migrations/ instead.
 
 create extension if not exists pgcrypto;
 
