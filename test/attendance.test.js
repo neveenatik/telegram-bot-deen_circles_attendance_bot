@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createHandlers } from '../lib/handlers/actions/attendance.js';
-import { TEXT } from '../lib/text.js';
+import { TEXT, st } from '../lib/text.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 
 test('refresh: non-admin (private chat) is rejected without touching storage', async () => {
@@ -64,4 +64,74 @@ test('mark: closed registration clears the keyboard and alerts', async () => {
 
   assert.equal(calls.editMessageReplyMarkup.length, 1);
   assert.deepEqual(calls.answerCbQuery, [[TEXT.registrationClosedAlert]]);
+});
+
+test('recite: no active session answers noSessionActive', async () => {
+  const storage = makeStorage({ getActiveSession: async () => null });
+  const { recite } = createHandlers({ storage, telegram: {} });
+  const { ctx, calls } = makeCtx();
+
+  await recite(ctx);
+
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.noSessionActive]]);
+});
+
+test('recite: closed registration answers registrationClosedAlert', async () => {
+  const session = { type: 'registeredSecondary', active: true, registrationActive: false, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+  });
+  const { recite } = createHandlers({ storage, telegram: {} });
+  const { ctx, calls } = makeCtx();
+
+  await recite(ctx);
+
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.registrationClosedAlert]]);
+});
+
+test('recite: unregistered student is registered present and queued for approval', async () => {
+  const savePendingCalls = [];
+  const session = { type: 'registeredSecondary', active: true, registrationActive: true, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [] }),
+    getPendingRegistrations: async () => [],
+    savePendingRegistrations: async (gid, pending) => { savePendingCalls.push([gid, pending]); },
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx);
+
+  // Queued for admin approval, deduped by userId.
+  assert.equal(savePendingCalls.length, 1);
+  assert.equal(savePendingCalls[0][1][0].userId, '42');
+  assert.equal(savePendingCalls[0][1][0].name, 'ليان');
+  // Counted present in the live session, with a registration timestamp for ordering.
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.memberId, '42');
+  assert.equal(typeof record.registeredAt, 'number');
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.registeredSelf(st('present').a)]]);
+});
+
+test('recite: existing member is marked present without queueing', async () => {
+  const savePendingCalls = [];
+  const session = { type: 'registeredSecondary', active: true, registrationActive: true, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [{ userId: '42', name: 'ليان' }] }),
+    savePendingRegistrations: async (gid, pending) => { savePendingCalls.push([gid, pending]); },
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx);
+
+  assert.equal(savePendingCalls.length, 0);
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.memberId, '42');
+  assert.equal(typeof record.registeredAt, 'number');
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.registeredAs(st('present').a)]]);
 });
