@@ -105,7 +105,7 @@ create table if not exists sessions (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (session_type in ('main', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation')),
+  check (session_type in ('main', 'training', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation')),
   check (series_id > 0),
   check (group_recitation_next_page > 0)
 );

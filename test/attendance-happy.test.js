@@ -72,14 +72,14 @@ test('mark: training self-registration queues the walk-in as a pending student (
   const addMembersCalls = [];
   let savedMaster = null;
   const session = {
-    type: 'main',
+    type: 'training',
     active: true,
     registrationActive: true,
     allowPublicRegistration: true,
     participants: {},
   };
   const storage = makeStorage({
-    getActiveSession: async () => ({ type: 'main', session }),
+    getActiveSession: async () => ({ type: 'training', session }),
     getMaster: async () => ({ members: [] }),
     saveMaster: async (_g, master) => { savedMaster = master; },
     getParentGroupId: async (gid) => (gid === '123' ? '-100999' : null),

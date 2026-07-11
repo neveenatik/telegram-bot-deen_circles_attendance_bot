@@ -108,7 +108,9 @@ test('starttraininglist: starts a training list initialized from the assigned ro
   await starttraininglist(ctx);
 
   assert.ok(saved, 'session should be persisted');
-  assert.equal(saved.type, 'main');
+  // Training lists are their own first-class session type
+  assert.equal(saved.type, 'training');
+  assert.equal(saved.session.type, 'training');
   assert.equal(saved.session.name, 'حلقة التدريب');
   assert.equal(saved.session.active, true);
   // Initialized from the training group's assigned roster
