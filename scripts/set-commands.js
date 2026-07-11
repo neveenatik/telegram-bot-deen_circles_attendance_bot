@@ -27,6 +27,7 @@ const commands = [
   { command: 'addstudent', description: 'إضافة طالبة أو أكثر (للمشرف)' },
   { command: 'removestudent', description: 'حذف احتياطي لطالبة أو أكثر (اسم/رقم حساب) (للمشرف)' },
   { command: 'listtrainingstudents', description: 'عرض طالبات مجموعة التدريب (للمشرف)' },
+  { command: 'groupid', description: 'عرض رقم هذه المجموعة لإضافتها كمجموعة تدريب (للمشرف)' },
   { command: 'addtraininggroup', description: 'إضافة مجموعة تدريب للاختيار السريع (للمشرف)' },
   { command: 'removetraininggroup', description: 'حذف مجموعة تدريب من القائمة (للمشرف)' },
   { command: 'listtraininggroups', description: 'عرض مجموعات التدريب المضافة (للمشرف)' },

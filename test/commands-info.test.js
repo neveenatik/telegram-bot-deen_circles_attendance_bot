@@ -64,6 +64,36 @@ test('myid: in a private chat does not touch pending registrations', async () =>
   assert.equal(saved, false);
 });
 
+test('groupid: in a private chat replies with the group-only notice', async () => {
+  const { groupid } = createHandlers({ storage: makeStorage() });
+  const { ctx, calls } = makeCtx({ chatType: 'private', admin: true });
+
+  await groupid(ctx);
+
+  assert.equal(calls.reply[0][0], TEXT.groupIdPrivateChat);
+  assert.equal(calls.replyWithMarkdown.length, 0);
+});
+
+test('groupid: non-admin in a group is rejected with adminOnly', async () => {
+  const { groupid } = createHandlers({ storage: makeStorage() });
+  const { ctx, calls } = makeCtx({ chatType: 'supergroup' });
+
+  await groupid(ctx);
+
+  assert.equal(calls.reply[0][0], TEXT.adminOnly);
+  assert.equal(calls.replyWithMarkdown.length, 0);
+});
+
+test('groupid: admin in a group replies with the chat id', async () => {
+  const { groupid } = createHandlers({ storage: makeStorage() });
+  const { ctx, calls } = makeCtx({ chatType: 'supergroup', chatId: -1001234567890, admin: true });
+
+  await groupid(ctx);
+
+  assert.equal(calls.replyWithMarkdown[0][0], TEXT.groupIdInfo('-1001234567890'));
+  assert.match(calls.replyWithMarkdown[0][0], /-1001234567890/);
+});
+
 test('registerCmd: non-admin is rejected', async () => {
   const { registerCmd } = createHandlers({ storage: makeStorage() });
   const { ctx, calls } = makeCtx();
