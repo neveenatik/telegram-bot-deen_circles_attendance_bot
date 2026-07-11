@@ -92,7 +92,7 @@ test('starttraininglist: is rejected when run in a group that has training group
   assert.match(calls.reply[0][0], /مجموعات التدريب فقط/);
 });
 
-test('starttraininglist: starts a training list initialized from the assigned roster', async () => {
+test('starttraininglist: starts a training list initialized from the assigned roster and allows walk-in self-registration', async () => {
   const storage = startStorage({
     getTrainingGroups: async () => [],
     getMaster: async () => ({ members: [{ name: 'أ', userId: '1' }] }),
@@ -113,6 +113,6 @@ test('starttraininglist: starts a training list initialized from the assigned ro
   assert.equal(saved.session.active, true);
   // Initialized from the training group's assigned roster
   assert.deepEqual(Object.keys(saved.session.participants), ['أ']);
-  // No public self-registration: members are assigned from the main group
-  assert.equal(saved.session.allowPublicRegistration, false);
+  // Walk-in students can still self-register by tapping present
+  assert.equal(saved.session.allowPublicRegistration, true);
 });

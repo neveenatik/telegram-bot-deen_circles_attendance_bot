@@ -121,6 +121,9 @@ export function makeStorage(overrides = {}) {
     saveHistory: async () => {},
     getAwaiting: async () => ({}),
     saveAwaiting: async () => {},
+    getParentGroupId: async () => null,
+    setParentGroup: async () => {},
+    addMembers: async () => {},
     ...overrides,
   };
 }

@@ -57,6 +57,23 @@ test('addtraininggroup: valid input persists a new training group', async () => 
   assert.equal(calls.replyWithMarkdown.length, 1);
 });
 
+test('addtraininggroup: links the training group to the main group', async () => {
+  const parentCalls = [];
+  const { addtraininggroup } = createHandlers({
+    storage: groupsStorage({
+      getTrainingGroups: async () => [],
+      saveTrainingGroups: async () => {},
+      setParentGroup: async (child, parent) => { parentCalls.push([child, parent]); },
+    }),
+  });
+  const { ctx } = makeCtx({ admin: true, chatId: 123, text: '/addtraininggroup -100 | مجموعة أ' });
+
+  await addtraininggroup(ctx);
+
+  // Training group (-100) linked to the main group (123)
+  assert.deepEqual(parentCalls, [['-100', '123']]);
+});
+
 test('removetraininggroup: unknown id reports not found', async () => {
   const { removetraininggroup } = createHandlers({
     storage: groupsStorage({ getTrainingGroups: async () => [] }),

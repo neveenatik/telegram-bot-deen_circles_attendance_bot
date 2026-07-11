@@ -59,3 +59,29 @@ test('rename: unknown index answers memberNotFound', async () => {
 
   assert.deepEqual(calls.answerCbQuery, [[TEXT.memberNotFound]]);
 });
+
+test('add: approving a pending student in a training group backfills them into the main group', async () => {
+  const addMembersCalls = [];
+  let savedMaster = null;
+  const storage = makeStorage({
+    getPendingRegistrations: async () => [{ userId: '42', name: 'ليان' }],
+    savePendingRegistrations: async () => {},
+    getMaster: async () => ({ members: [] }),
+    saveMaster: async (_g, m) => { savedMaster = m; },
+    getSession: async () => null,
+    getParentGroupId: async (gid) => (gid === '123' ? '-100999' : null),
+    addMembers: async (gid, members) => { addMembersCalls.push([gid, members]); },
+  });
+  const { add } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx } = makeCtx({ admin: true, match: ['pr:add:42:0', '42', '0'] });
+
+  await add(ctx);
+
+  // Approved into the training group's roster
+  assert.ok(savedMaster);
+  assert.equal(savedMaster.members[0].userId, '42');
+  // And backfilled into the linked main group
+  assert.equal(addMembersCalls.length, 1);
+  assert.equal(addMembersCalls[0][0], '-100999');
+  assert.deepEqual(addMembersCalls[0][1], [{ userId: '42', name: 'ليان' }]);
+});

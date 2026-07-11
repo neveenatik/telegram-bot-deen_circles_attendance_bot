@@ -11,6 +11,7 @@ create table if not exists groups (
   title text,
   current_series integer not null default 1,
   last_activity_at timestamptz,
+  parent_group_id bigint references groups(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (current_series > 0)
