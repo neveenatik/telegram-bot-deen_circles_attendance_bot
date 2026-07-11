@@ -73,3 +73,46 @@ test('startlist: blocked when a session is already active', async () => {
   assert.equal(calls.reply[0][0], TEXT.refreshed);
   assert.equal(saved, true); // resend persists the existing session's new message id
 });
+
+test('starttraininglist: is rejected when run in a group that has training groups configured', async () => {
+  const storage = startStorage({
+    getTrainingGroups: async () => [{ groupId: '-100999', name: 'مجموعة' }],
+  });
+  let saved = null;
+  const { starttraininglist } = createHandlers({
+    storage: { ...storage, saveSession: async (_g, type, session) => { saved = { type, session }; } },
+    telegram: makeTelegram(),
+    refreshSessionWidget: async () => {},
+  });
+  const { ctx, calls } = makeCtx({ admin: true, text: '/starttraininglist' });
+
+  await starttraininglist(ctx);
+
+  assert.equal(saved, null, 'no session should be created in a main group');
+  assert.match(calls.reply[0][0], /مجموعات التدريب فقط/);
+});
+
+test('starttraininglist: starts a training list initialized from the assigned roster', async () => {
+  const storage = startStorage({
+    getTrainingGroups: async () => [],
+    getMaster: async () => ({ members: [{ name: 'أ', userId: '1' }] }),
+  });
+  let saved = null;
+  const { starttraininglist } = createHandlers({
+    storage: { ...storage, saveSession: async (_g, type, session) => { saved = { type, session }; } },
+    telegram: makeTelegram(),
+    refreshSessionWidget: async () => {},
+  });
+  const { ctx } = makeCtx({ admin: true, text: '/starttraininglist' });
+
+  await starttraininglist(ctx);
+
+  assert.ok(saved, 'session should be persisted');
+  assert.equal(saved.type, 'main');
+  assert.equal(saved.session.name, 'حلقة التدريب');
+  assert.equal(saved.session.active, true);
+  // Initialized from the training group's assigned roster
+  assert.deepEqual(Object.keys(saved.session.participants), ['أ']);
+  // No public self-registration: members are assigned from the main group
+  assert.equal(saved.session.allowPublicRegistration, false);
+});

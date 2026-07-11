@@ -92,6 +92,10 @@ create table if not exists sessions (
   allow_public_registration boolean not null default false,
   chat_id text not null,
   widget_message_id bigint,
+  -- In-session page allocator for group-recitation sessions. Handed out and
+  -- advanced atomically via allocate_group_recitation_page(); never written by
+  -- the general session upsert (which would clobber concurrent allocations).
+  group_recitation_next_page integer not null default 1,
   started_at timestamptz not null default now(),
   started_by text,
   ended_at timestamptz,
@@ -101,8 +105,22 @@ create table if not exists sessions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (session_type in ('main', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation')),
-  check (series_id > 0)
+  check (series_id > 0),
+  check (group_recitation_next_page > 0)
 );
+
+-- Atomically hand out the current group-recitation page and advance the counter
+-- in a single locked UPDATE, so concurrent self-registrations never collide on
+-- the same page number. Returns the page just allocated.
+create or replace function allocate_group_recitation_page(p_session_id uuid)
+returns integer
+language sql
+as $$
+  update sessions
+     set group_recitation_next_page = group_recitation_next_page + 1
+   where id = p_session_id
+   returning group_recitation_next_page - 1;
+$$;
 
 -- One active session per group at a time
 create unique index if not exists uq_sessions_group_active
