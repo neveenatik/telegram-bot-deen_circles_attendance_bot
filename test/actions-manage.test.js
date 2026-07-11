@@ -6,17 +6,18 @@ import { TEXT } from '../lib/text.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 
 function manageDeps(session, overrides = {}) {
+  const { memberStatus = 'administrator', ...storageOverrides } = overrides;
   const calls = { saveParticipant: [], saveSession: [], refreshSession: 0, refreshManage: 0 };
   const storage = makeStorage({
     getSession: async () => session,
     getMaster: async () => ({ members: [{ name: 'سارة', userId: '1' }] }),
     saveSession: async (...a) => { calls.saveSession.push(a); },
     saveParticipant: async (...a) => { calls.saveParticipant.push(a); },
-    ...overrides,
+    ...storageOverrides,
   });
   const handlers = createHandlers({
     storage,
-    telegram: makeTelegram(),
+    telegram: makeTelegram({ getChatMember: async () => ({ status: memberStatus }) }),
     refreshSessionWidget: async () => { calls.refreshSession += 1; },
     refreshManageWidget: async () => { calls.refreshManage += 1; },
   });
@@ -24,8 +25,8 @@ function manageDeps(session, overrides = {}) {
 }
 
 test('setStatus: non-admin is rejected', async () => {
-  const { handlers } = manageDeps({ type: 'main', active: true, participants: {} });
-  const { ctx, calls } = makeCtx({ match: ['sm:main:set:0:present', 'main', '0', 'present'] });
+  const { handlers } = manageDeps({ type: 'main', active: true, participants: {} }, { memberStatus: 'member' });
+  const { ctx, calls } = makeCtx({ match: ['sm:123:main:set:0:present', '123', 'main', '0', 'present'] });
 
   await handlers.setStatus(ctx);
 
@@ -34,7 +35,7 @@ test('setStatus: non-admin is rejected', async () => {
 
 test('setStatus: no active session answers noSessionShort', async () => {
   const { handlers } = manageDeps(null, { getSession: async () => null });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:main:set:0:present', 'main', '0', 'present'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:123:main:set:0:present', '123', 'main', '0', 'present'] });
 
   await handlers.setStatus(ctx);
 
@@ -48,7 +49,7 @@ test('setStatus: on a normal session persists a single participant (not full ses
     participants: { 'سارة': { name: 'سارة', memberId: '1', status: null, called: null } },
   };
   const { handlers, calls } = manageDeps(session);
-  const { ctx } = makeCtx({ admin: true, match: ['sm:main:set:0:present', 'main', '0', 'present'] });
+  const { ctx } = makeCtx({ admin: true, match: ['sm:123:main:set:0:present', '123', 'main', '0', 'present'] });
 
   await handlers.setStatus(ctx);
 
@@ -67,7 +68,7 @@ test('setStatus: on a groupRecitation session persists the full session (page re
     participants: { 'سارة': { name: 'سارة', memberId: '1', status: null, called: null } },
   };
   const { handlers, calls } = manageDeps(session);
-  const { ctx } = makeCtx({ admin: true, match: ['sm:groupRecitation:set:0:listening', 'groupRecitation', '0', 'listening'] });
+  const { ctx } = makeCtx({ admin: true, match: ['sm:123:groupRecitation:set:0:listening', '123', 'groupRecitation', '0', 'listening'] });
 
   await handlers.setStatus(ctx);
 
@@ -82,7 +83,7 @@ test('setCall: persists a single participant and refreshes both widgets', async 
     participants: { 'سارة': { name: 'سارة', memberId: '1', status: 'present', called: null } },
   };
   const { handlers, calls } = manageDeps(session);
-  const { ctx } = makeCtx({ admin: true, match: ['sm:training:call:0:responding', 'training', '0', 'responding'] });
+  const { ctx } = makeCtx({ admin: true, match: ['sm:123:training:call:0:responding', '123', 'training', '0', 'responding'] });
 
   await handlers.setCall(ctx);
 
@@ -103,7 +104,7 @@ test('pick: a main session hides the call (نداء) buttons and header line', a
     participants: { 'سارة': { name: 'سارة', memberId: '1', status: 'present', called: null } },
   };
   const { handlers } = manageDeps(session);
-  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:main:pick:0', 'main', '0'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:123:main:pick:0', '123', 'main', '0'] });
 
   await handlers.pick(ctx);
 
@@ -119,7 +120,7 @@ test('pick: a training session shows the call (نداء) buttons and header line
     participants: { 'سارة': { name: 'سارة', memberId: '1', status: 'present', called: null } },
   };
   const { handlers } = manageDeps(session);
-  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:training:pick:0', 'training', '0'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:123:training:pick:0', '123', 'training', '0'] });
 
   await handlers.pick(ctx);
 
@@ -131,7 +132,7 @@ test('pick: a training session shows the call (نداء) buttons and header line
 test('setStatus: unknown member index answers memberNotFound', async () => {
   const session = { type: 'main', active: true, participants: {} };
   const { handlers } = manageDeps(session, { getMaster: async () => ({ members: [] }) });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:main:set:5:present', 'main', '5', 'present'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['sm:123:main:set:5:present', '123', 'main', '5', 'present'] });
 
   await handlers.setStatus(ctx);
 

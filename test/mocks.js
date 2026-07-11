@@ -24,6 +24,7 @@ export function makeTelegram(overrides = {}) {
     pinChatMessage: [],
     unpinChatMessage: [],
     answerCbQuery: [],
+    getChatMember: [],
   };
   const telegram = {
     calls,
@@ -34,6 +35,8 @@ export function makeTelegram(overrides = {}) {
     pinChatMessage(...a) { calls.pinChatMessage.push(a); return Promise.resolve(true); },
     unpinChatMessage(...a) { calls.unpinChatMessage.push(a); return Promise.resolve(true); },
     answerCbQuery(...a) { calls.answerCbQuery.push(a); return Promise.resolve(true); },
+    getChatMember(...a) { calls.getChatMember.push(a); return Promise.resolve({ status: 'administrator' }); },
+    getMe() { return Promise.resolve({ id: 42, is_bot: true, username: 'DeenCirclesBot', first_name: 'Deen Circles' }); },
     ...overrides,
   };
   return telegram;
