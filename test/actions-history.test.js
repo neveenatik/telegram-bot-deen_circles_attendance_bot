@@ -1,9 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createHandlers } from '../lib/handlers/actions/history.js';
+import { createHandlers as rawCreateHandlers } from '../lib/handlers/actions/history.js';
 import { TEXT } from '../lib/text.js';
-import { makeCtx, makeStorage } from './mocks.js';
+import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
+
+// The history panel is delivered to DM, so its handlers verify admin via
+// isAdminOf(telegram, groupId, userId). Supply a telegram whose getChatMember
+// reports the desired membership status (default: administrator).
+function createHandlers({ storage }, memberStatus = 'administrator') {
+  return rawCreateHandlers({
+    storage,
+    telegram: makeTelegram({ getChatMember: async () => ({ status: memberStatus }) }),
+  });
+}
 
 function historyStorage(overrides = {}) {
   return makeStorage({
@@ -15,7 +25,7 @@ function historyStorage(overrides = {}) {
 }
 
 test('home: non-admin is rejected', async () => {
-  const { home } = createHandlers({ storage: historyStorage() });
+  const { home } = createHandlers({ storage: historyStorage() }, 'member');
   const { ctx, calls } = makeCtx({ match: ['h:home:123:2', '123', '2'] });
 
   await home(ctx);
