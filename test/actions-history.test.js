@@ -16,7 +16,7 @@ function historyStorage(overrides = {}) {
 
 test('home: non-admin is rejected', async () => {
   const { home } = createHandlers({ storage: historyStorage() });
-  const { ctx, calls } = makeCtx({ match: ['h:home:2', '2'] });
+  const { ctx, calls } = makeCtx({ match: ['h:home:123:2', '123', '2'] });
 
   await home(ctx);
 
@@ -25,7 +25,7 @@ test('home: non-admin is rejected', async () => {
 
 test('home: admin with no records answers noSeriesRecords', async () => {
   const { home } = createHandlers({ storage: historyStorage({ getAllSessions: async () => [] }) });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['h:home:2', '2'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:home:123:2', '123', '2'] });
 
   await home(ctx);
 
@@ -35,7 +35,7 @@ test('home: admin with no records answers noSeriesRecords', async () => {
 test('home: admin with records edits the message and answers refreshed', async () => {
   const sessions = [{ seriesId: 2, name: 'جلسة', participants: {} }];
   const { home } = createHandlers({ storage: historyStorage({ getAllSessions: async () => sessions }) });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['h:home:2', '2'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:home:123:2', '123', '2'] });
 
   await home(ctx);
 
