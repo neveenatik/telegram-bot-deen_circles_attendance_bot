@@ -215,6 +215,26 @@ test('recite (backup, no main): frozen list flags a new student as backup and no
   assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteBackupNoMainAlert, { show_alert: true }]]);
 });
 
+test('recite (backup): a member already on the primary list is not demoted to reserve', async () => {
+  const session = {
+    type: 'registeredSecondary', active: true, registrationActive: false,
+    participants: { 'ليان': { name: 'ليان', memberId: '42', status: 'present', called: null, registeredAt: 1000, attendedMain: true, backup: false } },
+  };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [{ userId: '42', name: 'ليان' }] }),
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, true, true);
+
+  const record = session.participants['ليان'];
+  assert.equal(record.backup, false);
+  assert.equal(record.registeredAt, 1000);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteBackupAlreadyRegisteredAlert, { show_alert: true }]]);
+});
+
 test('recite (non-backup): frozen list rejects a normal registration attempt', async () => {
   const session = { type: 'registeredSecondary', active: true, registrationActive: false, participants: {} };
   const storage = makeStorage({
