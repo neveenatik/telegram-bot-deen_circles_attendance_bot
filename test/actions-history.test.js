@@ -114,3 +114,65 @@ test('pick: userId token opens the status menu for the matching member', async (
   assert.equal(calls.editMessageText.length, 1);
   assert.ok(calls.editMessageText[0][0].includes('أحمد'));
 });
+
+// Recitation-correction (registeredSecondary) archived sessions expose per-member
+// verse editing on top of attendance status.
+function recitationSession() {
+  return {
+    seriesId: 2,
+    type: 'registeredSecondary',
+    name: 'تصحيح',
+    startedAt: '2026-07-11T13:00:00.000Z',
+    endedAt: '2026-07-11T15:00:00.000Z',
+    participants: {
+      'بكر': { name: 'بكر', memberId: '200', status: null, called: null, verse: 'البقرة 1-5', registeredAt: 2 },
+      'أحمد': { name: 'أحمد', memberId: '100', status: null, called: null, verse: null, registeredAt: 1 },
+    },
+  };
+}
+
+test('pick: registeredSecondary shows the current verse and an edit-verse button', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [recitationSession()] });
+  const { pick } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:pick:123:2:1:u200', '123', '2', '1', 'u200'] });
+
+  await pick(ctx);
+
+  assert.equal(calls.editMessageText.length, 1);
+  const [text, extra] = calls.editMessageText[0];
+  assert.ok(text.includes('البقرة 1-5'), 'shows the current verse');
+  const buttons = extra.reply_markup.inline_keyboard.flat();
+  assert.ok(buttons.some((b) => b.callback_data === 'h:everse:123:2:1:u200'), 'has edit-verse button');
+});
+
+test('editVerse: registeredSecondary sets awaiting and sends a force-reply prompt', async () => {
+  const awaits = [];
+  const storage = historyStorage({
+    getAllSessions: async () => [recitationSession()],
+    getAwaiting: async () => null,
+    setAwaiting: async (...a) => { awaits.push(a); },
+  });
+  const { editVerse } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u200', '123', '2', '1', 'u200'] });
+
+  await editVerse(ctx);
+
+  assert.equal(calls.reply.length, 1, 'sends a prompt');
+  assert.equal(calls.reply[0][1].reply_markup.force_reply, true);
+  const record = awaits[awaits.length - 1][2];
+  assert.equal(record.action, 'historyEditVerse');
+  assert.equal(record.memberName, 'بكر');
+  assert.equal(record.token, 'u200');
+  assert.equal(record.sessionType, 'registeredSecondary');
+});
+
+test('editVerse: non-recitation session answers memberNotFound', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
+  const { editVerse } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u100', '123', '2', '1', 'u100'] });
+
+  await editVerse(ctx);
+
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.memberNotFound]]);
+});
+
