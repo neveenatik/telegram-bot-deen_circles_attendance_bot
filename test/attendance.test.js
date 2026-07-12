@@ -174,3 +174,57 @@ test('recite (no main): existing member is marked present and flagged not attend
   assert.equal(record.attendedMain, false);
   assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteAttestationNoMainAlert, { show_alert: true }]]);
 });
+
+test('recite (backup): frozen list still registers a member on the reserve list', async () => {
+  const session = { type: 'registeredSecondary', active: true, registrationActive: false, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [{ userId: '42', name: 'ليان' }] }),
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, true, true);
+
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.attendedMain, true);
+  assert.equal(record.backup, true);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteBackupAlert, { show_alert: true }]]);
+});
+
+test('recite (backup, no main): frozen list flags a new student as backup and not attending main', async () => {
+  const savePendingCalls = [];
+  const session = { type: 'registeredSecondary', active: true, registrationActive: false, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [] }),
+    getPendingRegistrations: async () => [],
+    savePendingRegistrations: async (gid, pending) => { savePendingCalls.push([gid, pending]); },
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, false, true);
+
+  assert.equal(savePendingCalls.length, 1);
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.attendedMain, false);
+  assert.equal(record.backup, true);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteBackupNoMainAlert, { show_alert: true }]]);
+});
+
+test('recite (non-backup): frozen list rejects a normal registration attempt', async () => {
+  const session = { type: 'registeredSecondary', active: true, registrationActive: false, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, true, false);
+
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.registrationClosedAlert]]);
+  assert.equal(session.participants['ليان'], undefined);
+});

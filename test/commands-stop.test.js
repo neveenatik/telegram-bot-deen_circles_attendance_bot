@@ -80,3 +80,25 @@ test('freezeList: non-admin is rejected', async () => {
 
   assert.equal(calls.reply[0][0], TEXT.adminOnly);
 });
+
+test('freezelistFromWidget: non-admin is rejected via toast', async () => {
+  const { freezelistFromWidget } = stopHandlers();
+  const { ctx, calls } = makeCtx();
+
+  await freezelistFromWidget(ctx);
+
+  assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
+});
+
+test('freezelistFromWidget: admin freezes the open session and confirms', async () => {
+  const session = { type: 'main', active: true, registrationActive: true, name: 'الحلقة', chatId: '123', messageId: 55, participants: {} };
+  const storage = makeStorage({ getSession: async (_gid, type) => (type === 'main' ? session : null) });
+  const { freezelistFromWidget } = createHandlers({ storage, telegram: makeTelegram() });
+  const { ctx, calls } = makeCtx({ admin: true });
+
+  await freezelistFromWidget(ctx);
+
+  assert.equal(session.registrationActive, false, 'registration is frozen');
+  assert.equal(calls.answerCbQuery.length, 1, 'button spinner cleared');
+  assert.equal(calls.reply.at(-1)[0], TEXT.registrationStopped);
+});
