@@ -202,6 +202,78 @@ test('editVerse: non-recitation session answers memberNotFound', async () => {
   assert.deepEqual(calls.answerCbQuery, [[TEXT.memberNotFound]]);
 });
 
+test('pick: registeredSecondary member menu exposes attendedMain and backup toggles', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [recitationSession()] });
+  const { pick } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:pick:123:2:1:u200', '123', '2', '1', 'u200'] });
+
+  await pick(ctx);
+
+  const buttons = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat();
+  assert.ok(buttons.some((b) => b.callback_data === 'h:rflag:123:2:1:u200:main:1'), 'has attended-main toggle');
+  assert.ok(buttons.some((b) => b.callback_data === 'h:rflag:123:2:1:u200:main:0'), 'has no-main toggle');
+  assert.ok(buttons.some((b) => b.callback_data === 'h:rflag:123:2:1:u200:backup:1'), 'has backup-on toggle');
+  assert.ok(buttons.some((b) => b.callback_data === 'h:rflag:123:2:1:u200:backup:0'), 'has backup-off toggle');
+});
+
+test('setReciteFlag: sets attendedMain=false and persists', async () => {
+  let saved = null;
+  const storage = historyStorage({
+    getAllSessions: async () => [recitationSession()],
+    getSessions: async () => [recitationSession()],
+    saveSessions: async (_g, _t, sessions) => { saved = sessions; },
+  });
+  const { setReciteFlag } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({
+    admin: true,
+    match: ['h:rflag:123:2:1:u200:main:0', '123', '2', '1', 'u200', 'main', '0'],
+  });
+
+  await setReciteFlag(ctx);
+
+  assert.ok(saved, 'saveSessions was called');
+  assert.equal(saved[0].participants['بكر'].attendedMain, false);
+  assert.equal(calls.editMessageText.length, 1, 'refreshes the member menu in place');
+  assert.equal(calls.answerCbQuery.length, 1);
+});
+
+test('setReciteFlag: sets backup=true and persists', async () => {
+  let saved = null;
+  const storage = historyStorage({
+    getAllSessions: async () => [recitationSession()],
+    getSessions: async () => [recitationSession()],
+    saveSessions: async (_g, _t, sessions) => { saved = sessions; },
+  });
+  const { setReciteFlag } = createHandlers({ storage });
+  const { ctx } = makeCtx({
+    admin: true,
+    match: ['h:rflag:123:2:1:u100:backup:1', '123', '2', '1', 'u100', 'backup', '1'],
+  });
+
+  await setReciteFlag(ctx);
+
+  assert.equal(saved[0].participants['أحمد'].backup, true);
+});
+
+test('setReciteFlag: non-recitation session answers memberNotFound and does not save', async () => {
+  let saved = null;
+  const storage = historyStorage({
+    getAllSessions: async () => [editorSession()],
+    getSessions: async () => [editorSession()],
+    saveSessions: async (_g, _t, sessions) => { saved = sessions; },
+  });
+  const { setReciteFlag } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({
+    admin: true,
+    match: ['h:rflag:123:2:1:u200:main:0', '123', '2', '1', 'u200', 'main', '0'],
+  });
+
+  await setReciteFlag(ctx);
+
+  assert.equal(saved, null);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.memberNotFound]]);
+});
+
 test('session: editor exposes an edit-title button for the record', async () => {
   const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
   const { session } = createHandlers({ storage });
