@@ -186,3 +186,45 @@ test('editVerse: non-recitation session answers memberNotFound', async () => {
   assert.deepEqual(calls.answerCbQuery, [[TEXT.memberNotFound]]);
 });
 
+test('session: editor exposes an edit-title button for the record', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
+  const { session } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:session:123:2:1:0', '123', '2', '1', '0'] });
+
+  await session(ctx);
+
+  assert.equal(calls.editMessageText.length, 1);
+  const buttons = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat();
+  assert.ok(buttons.some((b) => b.callback_data === 'h:etitle:123:2:1:0'), 'has edit-title button');
+});
+
+test('editTitle: sets awaiting and sends a force-reply prompt', async () => {
+  const awaits = [];
+  const storage = historyStorage({
+    getAllSessions: async () => [editorSession()],
+    getAwaiting: async () => null,
+    setAwaiting: async (...a) => { awaits.push(a); },
+  });
+  const { editTitle } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:etitle:123:2:1:0', '123', '2', '1', '0'] });
+
+  await editTitle(ctx);
+
+  assert.equal(calls.reply.length, 1, 'sends a prompt');
+  assert.equal(calls.reply[0][1].reply_markup.force_reply, true);
+  const record = awaits[awaits.length - 1][2];
+  assert.equal(record.action, 'historyEditTitle');
+  assert.equal(record.recordIndex, 1);
+  assert.equal(record.sessionType, 'main');
+});
+
+test('editTitle: invalid record index answers invalidRecordIndex', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
+  const { editTitle } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:etitle:123:2:9:0', '123', '2', '9', '0'] });
+
+  await editTitle(ctx);
+
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.invalidRecordIndex]]);
+});
+

@@ -59,3 +59,36 @@ test('onText: historyEditVerse writes the verse to the archived session and refr
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the editor message');
 });
 
+test('onText: historyEditTitle renames the archived session and refreshes the editor', async () => {
+  const session = {
+    type: 'main',
+    seriesId: 2,
+    name: 'مجلس',
+    startedAt: '2026-07-11T13:00:00.000Z',
+    endedAt: '2026-07-11T15:00:00.000Z',
+    participants: { 'بكر': { name: 'بكر', memberId: '200', status: null, called: null } },
+  };
+  let saved = null;
+  const pending = {
+    action: 'historyEditTitle', groupId: '123', chatId: 123, msgId: 555,
+    series: 2, recordIndex: 1, recordKey: archivedSessionKey(session),
+    sessionType: 'main', memberPage: 0, promptMsgId: 556, awaitingPrompt: false,
+  };
+  const storage = makeStorage({
+    getAwaiting: async () => pending,
+    delAwaiting: async () => {},
+    getSessions: async () => [session],
+    saveSessions: async (_g, _t, sessions) => { saved = sessions; },
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'مجلس التلاوة' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.ok(saved, 'saveSessions was called');
+  assert.equal(saved[0].name, 'مجلس التلاوة');
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the editor message');
+});
+
