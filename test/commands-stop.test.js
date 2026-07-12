@@ -34,7 +34,7 @@ test('editlist: non-admin is rejected', async () => {
 
   await editlist(ctx);
 
-  assert.equal(calls.reply[0][0], TEXT.adminOnly);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
 });
 
 test('editlist: admin with no active session reports no session', async () => {
@@ -43,7 +43,7 @@ test('editlist: admin with no active session reports no session', async () => {
 
   await editlist(ctx);
 
-  assert.equal(calls.reply[0][0], TEXT.noSessionActive);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.noSessionActive);
 });
 
 test('editlist: admin gets the edit panel in their DM', async () => {
@@ -57,7 +57,7 @@ test('editlist: admin gets the edit panel in their DM', async () => {
 
   assert.equal(telegram.calls.sendMessage.length, 1, 'panel sent once');
   assert.equal(telegram.calls.sendMessage[0][0], 777, 'panel delivered to the admin DM');
-  assert.equal(calls.reply[0][0], TEXT.panelSentToDm, 'group gets an ephemeral confirmation');
+  assert.equal(calls.answerCbQuery[0][0], TEXT.panelSentToDm, 'admin gets a toast confirmation');
 });
 
 test('editlist: nudges the admin when the DM is closed', async () => {
