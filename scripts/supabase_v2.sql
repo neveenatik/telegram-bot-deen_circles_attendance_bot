@@ -143,6 +143,8 @@ create table if not exists session_participants (
   registration_time timestamptz,
   pages text,
   verse text,
+  attended_main boolean,
+  backup boolean,
   notes jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
