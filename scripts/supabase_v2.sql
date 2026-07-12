@@ -33,6 +33,7 @@ create table if not exists members (
   telegram_user_id text not null,
   name text not null,
   active boolean not null default true,
+  list_number integer,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (group_id, telegram_user_id)
@@ -42,6 +43,12 @@ create table if not exists members (
 create unique index if not exists uq_members_group_name_active
   on members (group_id, name)
   where active = true;
+
+-- Sequential roster number students use to reach teachers. Unique per group
+-- among assigned (non-null) values; nulls may repeat.
+create unique index if not exists uq_members_group_list_number
+  on members (group_id, list_number)
+  where list_number is not null;
 
 -- Teachers
 create table if not exists teachers (
@@ -268,6 +275,27 @@ drop trigger if exists trg_processed_updates_updated_at on processed_updates;
 create trigger trg_processed_updates_updated_at
 before update on processed_updates
 for each row execute function touch_updated_at();
+
+-- Auto-assign members.list_number on insert: next sequential number per group,
+-- unless one was supplied explicitly (e.g. the backfill script). Fires only on
+-- INSERT, so existing members keep their assigned number on update/reactivation.
+create or replace function assign_member_list_number()
+returns trigger as $$
+begin
+  if new.list_number is null then
+    select coalesce(max(list_number), 0) + 1
+      into new.list_number
+      from members
+      where group_id = new.group_id;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_assign_member_list_number on members;
+create trigger trg_assign_member_list_number
+before insert on members
+for each row execute function assign_member_list_number();
 
 -- Security baseline: enable RLS on all application tables.
 -- The bot uses SUPABASE_SERVICE_ROLE_KEY on the server, which bypasses RLS.
