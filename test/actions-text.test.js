@@ -33,12 +33,12 @@ test('onText: historyEditVerse writes the verse to the archived session and refr
     name: 'تصحيح',
     startedAt: '2026-07-11T13:00:00.000Z',
     endedAt: '2026-07-11T15:00:00.000Z',
-    participants: { 'بكر': { name: 'بكر', memberId: '200', status: null, called: null, verse: null } },
+    participants: { 'بكر': { name: 'بكر', memberId: '200', status: 'present', called: null, verse: null } },
   };
   let saved = null;
   const pending = {
     action: 'historyEditVerse', groupId: '123', chatId: 123, msgId: 555,
-    series: 2, recordIndex: 1, recordKey: archivedSessionKey(session), token: 'u200',
+    series: 2, recordIndex: 1, recordKey: archivedSessionKey(session), token: 'u200', verseListPage: 0,
     memberName: 'بكر', sessionType: 'registeredSecondary', promptMsgId: 556, awaitingPrompt: false,
   };
   const storage = makeStorage({

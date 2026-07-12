@@ -135,24 +135,39 @@ function recitationSession() {
     startedAt: '2026-07-11T13:00:00.000Z',
     endedAt: '2026-07-11T15:00:00.000Z',
     participants: {
-      'بكر': { name: 'بكر', memberId: '200', status: null, called: null, verse: 'البقرة 1-5', registeredAt: 2 },
-      'أحمد': { name: 'أحمد', memberId: '100', status: null, called: null, verse: null, registeredAt: 1 },
+      'بكر': { name: 'بكر', memberId: '200', status: 'present', called: null, verse: 'البقرة 1-5', registeredAt: 2 },
+      'أحمد': { name: 'أحمد', memberId: '100', status: 'listening', called: null, verse: null, registeredAt: 1 },
+      'خالد': { name: 'خالد', memberId: '300', status: 'absent', called: null, verse: null, registeredAt: 3 },
     },
   };
 }
 
-test('pick: registeredSecondary shows the current verse and an edit-verse button', async () => {
+test('session: registeredSecondary editor exposes an edit-verses button', async () => {
   const storage = historyStorage({ getAllSessions: async () => [recitationSession()] });
-  const { pick } = createHandlers({ storage });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['h:pick:123:2:1:u200', '123', '2', '1', 'u200'] });
+  const { session } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:session:123:2:1:0', '123', '2', '1', '0'] });
 
-  await pick(ctx);
+  await session(ctx);
+
+  const buttons = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat();
+  assert.ok(buttons.some((b) => b.callback_data === 'h:vlist:123:2:1:0'), 'has edit-verses button');
+});
+
+test('verseList: lists only present/listening students with verse-edit buttons', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [recitationSession()] });
+  const { verseList } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:vlist:123:2:1:0', '123', '2', '1', '0'] });
+
+  await verseList(ctx);
 
   assert.equal(calls.editMessageText.length, 1);
   const [text, extra] = calls.editMessageText[0];
   assert.ok(text.includes('البقرة 1-5'), 'shows the current verse');
   const buttons = extra.reply_markup.inline_keyboard.flat();
-  assert.ok(buttons.some((b) => b.callback_data === 'h:everse:123:2:1:u200'), 'has edit-verse button');
+  const verseButtons = buttons.filter((b) => b.callback_data.startsWith('h:everse:'));
+  assert.equal(verseButtons.length, 2, 'only present + listening students are listed');
+  assert.ok(verseButtons.some((b) => b.callback_data === 'h:everse:123:2:1:u200:v0'), 'present student button carries the list page');
+  assert.ok(!buttons.some((b) => b.callback_data.includes('u300')), 'absent student is excluded');
 });
 
 test('editVerse: registeredSecondary sets awaiting and sends a force-reply prompt', async () => {
@@ -163,7 +178,7 @@ test('editVerse: registeredSecondary sets awaiting and sends a force-reply promp
     setAwaiting: async (...a) => { awaits.push(a); },
   });
   const { editVerse } = createHandlers({ storage });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u200', '123', '2', '1', 'u200'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u200:v0', '123', '2', '1', 'u200', '0'] });
 
   await editVerse(ctx);
 
@@ -173,13 +188,14 @@ test('editVerse: registeredSecondary sets awaiting and sends a force-reply promp
   assert.equal(record.action, 'historyEditVerse');
   assert.equal(record.memberName, 'بكر');
   assert.equal(record.token, 'u200');
+  assert.equal(record.verseListPage, 0);
   assert.equal(record.sessionType, 'registeredSecondary');
 });
 
 test('editVerse: non-recitation session answers memberNotFound', async () => {
   const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
   const { editVerse } = createHandlers({ storage });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u100', '123', '2', '1', 'u100'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u100:v0', '123', '2', '1', 'u100', '0'] });
 
   await editVerse(ctx);
 
