@@ -112,7 +112,28 @@ test('recite: unregistered student is registered present and queued for approval
   assert.equal(record.status, 'present');
   assert.equal(record.memberId, '42');
   assert.equal(typeof record.registeredAt, 'number');
-  assert.deepEqual(calls.answerCbQuery, [[TEXT.registeredSelf(st('present').a)]]);
+  assert.equal(record.attendedMain, true);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteAttestationAlert, { show_alert: true }]]);
+});
+
+test('recite (no main): unregistered student is flagged as not attending the main session', async () => {
+  const savePendingCalls = [];
+  const session = { type: 'registeredSecondary', active: true, registrationActive: true, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [] }),
+    getPendingRegistrations: async () => [],
+    savePendingRegistrations: async (gid, pending) => { savePendingCalls.push([gid, pending]); },
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, false);
+
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.attendedMain, false);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteAttestationNoMainAlert, { show_alert: true }]]);
 });
 
 test('recite: existing member is marked present without queueing', async () => {
@@ -133,5 +154,23 @@ test('recite: existing member is marked present without queueing', async () => {
   assert.equal(record.status, 'present');
   assert.equal(record.memberId, '42');
   assert.equal(typeof record.registeredAt, 'number');
-  assert.deepEqual(calls.answerCbQuery, [[TEXT.registeredAs(st('present').a)]]);
+  assert.equal(record.attendedMain, true);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteAttestationAlert, { show_alert: true }]]);
+});
+
+test('recite (no main): existing member is marked present and flagged not attending main', async () => {
+  const session = { type: 'registeredSecondary', active: true, registrationActive: true, participants: {} };
+  const storage = makeStorage({
+    getActiveSession: async () => ({ type: 'registeredSecondary', session }),
+    getMaster: async () => ({ members: [{ userId: '42', name: 'ليان' }] }),
+  });
+  const { recite } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx, calls } = makeCtx({ userId: 42, from: { id: 42, first_name: 'ليان' } });
+
+  await recite(ctx, false);
+
+  const record = session.participants['ليان'];
+  assert.equal(record.status, 'present');
+  assert.equal(record.attendedMain, false);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.reciteAttestationNoMainAlert, { show_alert: true }]]);
 });
