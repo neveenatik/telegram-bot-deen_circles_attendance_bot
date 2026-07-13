@@ -283,6 +283,12 @@ create or replace function assign_member_list_number()
 returns trigger as $$
 begin
   if new.list_number is null then
+    -- Serialize concurrent inserts for the same group so two rows can't read the
+    -- same max() and compute the same next number. Keyed on group_id; released
+    -- automatically at transaction end. Different groups use different keys and
+    -- do not block each other.
+    perform pg_advisory_xact_lock(new.group_id);
+
     select coalesce(max(list_number), 0) + 1
       into new.list_number
       from members
