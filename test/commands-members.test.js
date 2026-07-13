@@ -20,12 +20,16 @@ test('students: non-admin is rejected', async () => {
 });
 
 test('students: admin gets the members list', async () => {
-  const { students } = handlers(makeStorage({ getMaster: async () => ({ members: [] }) }));
+  const telegram = makeTelegram();
+  const { students } = createHandlers({ storage: makeStorage({ getMaster: async () => ({ members: [] }) }), telegram });
   const { ctx, calls } = makeCtx({ admin: true });
 
   await students(ctx);
 
-  assert.equal(calls.replyWithMarkdown.length, 1);
+  // Panel is delivered to the admin's DM; the group only gets an ephemeral note.
+  assert.equal(telegram.calls.sendMessage.length, 1);
+  assert.equal(telegram.calls.sendMessage[0][0], ctx.from.id);
+  assert.equal(calls.reply[0][0], TEXT.panelSentToDm);
 });
 
 test('removestudents: non-creator is rejected with creatorOnly', async () => {

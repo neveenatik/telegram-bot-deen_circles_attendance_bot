@@ -5,9 +5,16 @@ import { createHandlers } from '../lib/handlers/actions/members.js';
 import { TEXT } from '../lib/text.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 
+// The members/pending panels are DM-delivered, so handlers verify admin via
+// isAdminOf(telegram, groupId, userId). Supply a telegram whose getChatMember
+// reports the desired membership status (default: administrator).
+function adminTelegram(memberStatus = 'administrator') {
+  return makeTelegram({ getChatMember: async () => ({ status: memberStatus }) });
+}
+
 test('pick: non-admin is rejected', async () => {
-  const { pick } = createHandlers({ storage: makeStorage(), telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ match: ['mb:pick:0', '0'] });
+  const { pick } = createHandlers({ storage: makeStorage(), telegram: adminTelegram('member') });
+  const { ctx, calls } = makeCtx({ match: ['mb:123:pick:0', '123', '0'] });
 
   await pick(ctx);
 
@@ -16,8 +23,8 @@ test('pick: non-admin is rejected', async () => {
 
 test('deleteMember: unknown index answers memberNotFound', async () => {
   const storage = makeStorage({ getMaster: async () => ({ members: [] }) });
-  const { deleteMember } = createHandlers({ storage, telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:del:0', '0'] });
+  const { deleteMember } = createHandlers({ storage, telegram: adminTelegram() });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:del:0', '123', '0'] });
 
   await deleteMember(ctx);
 
@@ -36,10 +43,10 @@ test('deleteMember: removes the member, updates the active session and refreshes
   });
   const { deleteMember } = createHandlers({
     storage,
-    telegram: makeTelegram(),
+    telegram: adminTelegram(),
     refreshSessionWidget: async () => { refreshed = true; },
   });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:del:0', '0'] });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:del:0', '123', '0'] });
 
   await deleteMember(ctx);
 
@@ -52,8 +59,8 @@ test('deleteMember: removes the member, updates the active session and refreshes
 
 test('rename: unknown index answers memberNotFound', async () => {
   const storage = makeStorage({ getMaster: async () => ({ members: [] }) });
-  const { rename } = createHandlers({ storage, telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:rename:0', '0'] });
+  const { rename } = createHandlers({ storage, telegram: adminTelegram() });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:ren:0', '123', '0'] });
 
   await rename(ctx);
 
@@ -72,8 +79,8 @@ test('add: approving a pending student in a training group backfills them into t
     getParentGroupId: async (gid) => (gid === '123' ? '-100999' : null),
     addMembers: async (gid, members) => { addMembersCalls.push([gid, members]); },
   });
-  const { add } = createHandlers({ storage, telegram: makeTelegram(), refreshSessionWidget: async () => {} });
-  const { ctx } = makeCtx({ admin: true, match: ['pr:add:42:0', '42', '0'] });
+  const { add } = createHandlers({ storage, telegram: adminTelegram(), refreshSessionWidget: async () => {} });
+  const { ctx } = makeCtx({ admin: true, match: ['pr:123:add:42:0', '123', '42', '0'] });
 
   await add(ctx);
 
@@ -96,15 +103,17 @@ test('sendConfirmations: welcomes only members without welcomedAt and stamps the
     getMaster: async () => master,
     saveMaster: async (_g, m) => { savedMaster = m; },
   });
-  const { sendConfirmations } = createHandlers({ storage, telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:sendconfirmations'] });
+  const telegram = adminTelegram();
+  const { sendConfirmations } = createHandlers({ storage, telegram });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:sendconfirmations', '123'] });
 
   await sendConfirmations(ctx);
 
-  // Only the un-welcomed member is mentioned
-  assert.equal(calls.reply.length, 1);
-  assert.match(calls.reply[0][0], /سارة/);
-  assert.doesNotMatch(calls.reply[0][0], /ليان/);
+  // The confirmation is posted to the group, not the admin's DM
+  assert.equal(telegram.calls.sendMessage.length, 1);
+  assert.equal(telegram.calls.sendMessage[0][0], '123');
+  assert.match(telegram.calls.sendMessage[0][1], /سارة/);
+  assert.doesNotMatch(telegram.calls.sendMessage[0][1], /ليان/);
   // Alert reflects one newly welcomed member
   assert.deepEqual(calls.answerCbQuery, [[TEXT.batchConfirmationAlert(1), { show_alert: true }]]);
   // welcomedAt is now set on the previously un-welcomed member
@@ -116,12 +125,13 @@ test('sendConfirmations: reports when everyone is already welcomed', async () =>
     { userId: '1', name: 'ليان', welcomedAt: '2026-07-01T00:00:00.000Z' },
   ] };
   const storage = makeStorage({ getMaster: async () => master });
-  const { sendConfirmations } = createHandlers({ storage, telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:sendconfirmations'] });
+  const telegram = adminTelegram();
+  const { sendConfirmations } = createHandlers({ storage, telegram });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:sendconfirmations', '123'] });
 
   await sendConfirmations(ctx);
 
-  assert.equal(calls.reply.length, 0);
+  assert.equal(telegram.calls.sendMessage.length, 0);
   assert.deepEqual(calls.answerCbQuery, [[TEXT.allMembersAlreadyConfirmed, { show_alert: true }]]);
 });
 
@@ -132,13 +142,15 @@ test('sendConfirm: welcomes a single member and stamps welcomedAt', async () => 
     getMaster: async () => master,
     saveMaster: async (_g, m) => { savedMaster = m; },
   });
-  const { sendConfirm } = createHandlers({ storage, telegram: makeTelegram() });
-  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:sendconfirm:0:0', '0', '0'] });
+  const telegram = adminTelegram();
+  const { sendConfirm } = createHandlers({ storage, telegram });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['mb:123:sendconfirm:0:0', '123', '0', '0'] });
 
   await sendConfirm(ctx);
 
-  assert.equal(calls.reply.length, 1);
-  assert.match(calls.reply[0][0], /سارة/);
+  assert.equal(telegram.calls.sendMessage.length, 1);
+  assert.equal(telegram.calls.sendMessage[0][0], '123');
+  assert.match(telegram.calls.sendMessage[0][1], /سارة/);
   assert.deepEqual(calls.answerCbQuery, [[TEXT.confirmationSent]]);
   assert.ok(savedMaster.members[0].welcomedAt);
 });
