@@ -16,12 +16,32 @@ function createHandlers({ storage }, memberStatus = 'administrator') {
 }
 
 function historyStorage(overrides = {}) {
-  return makeStorage({
-    getAllSessions: async () => [],
+  // getAllSessions now returns metadata-only records; the handlers hydrate a
+  // picked record's roster via getSessionParticipants. Mirror that here: attach
+  // a stable synthetic id to each fixture session and derive a matching
+  // getSessionParticipants from the same fixtures so existing tests (which put
+  // participants on their getAllSessions fixtures) keep working unchanged.
+  const rawGetAll = overrides.getAllSessions || (async () => []);
+  const getAllSessions = async (...args) => {
+    const list = await rawGetAll(...args);
+    return (list || []).map((s, i) => (s && s.id == null ? { ...s, id: `sid-${i}` } : s));
+  };
+  const store = makeStorage({
     getSessions: async () => [],
     saveSessions: async () => {},
     ...overrides,
+    getAllSessions,
   });
+  if (!overrides.getSessionParticipants) {
+    store.getSessionParticipants = async (_groupId, ids) => {
+      const wanted = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
+      const list = await getAllSessions();
+      const out = {};
+      for (const s of list) if (wanted.has(String(s.id))) out[s.id] = s.participants || {};
+      return out;
+    };
+  }
+  return store;
 }
 
 test('home: non-admin is rejected', async () => {

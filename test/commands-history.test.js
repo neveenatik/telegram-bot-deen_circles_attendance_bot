@@ -6,13 +6,31 @@ import { TEXT } from '../lib/text.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 
 function historyStorage(overrides = {}) {
-  return makeStorage({
-    getAllSessions: async () => [],
+  // getAllSessions is metadata-only; aggregates hydrate rosters on demand via
+  // getSessionParticipants. Attach stable synthetic ids to fixtures and derive
+  // a matching getSessionParticipants from them.
+  const rawGetAll = overrides.getAllSessions || (async () => []);
+  const getAllSessions = async (...args) => {
+    const list = await rawGetAll(...args);
+    return (list || []).map((s, i) => (s && s.id == null ? { ...s, id: `sid-${i}` } : s));
+  };
+  const store = makeStorage({
     getCurrentSeries: async () => 1,
     getSession: async () => null,
     getTrainingGroups: async () => [],
     ...overrides,
+    getAllSessions,
   });
+  if (!overrides.getSessionParticipants) {
+    store.getSessionParticipants = async (_groupId, ids) => {
+      const wanted = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
+      const list = await getAllSessions();
+      const out = {};
+      for (const s of list) if (wanted.has(String(s.id))) out[s.id] = s.participants || {};
+      return out;
+    };
+  }
+  return store;
 }
 
 test('classhistory: non-admin is rejected', async () => {
