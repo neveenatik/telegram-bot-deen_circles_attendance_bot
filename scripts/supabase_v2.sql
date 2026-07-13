@@ -9,6 +9,11 @@ create table if not exists groups (
   id bigserial primary key,
   telegram_chat_id text not null unique,
   title text,
+  -- Offline classes: owner (Telegram user id) + human class name, unique per
+  -- owner. Null for live, group-backed rows. telegram_chat_id stays the stable
+  -- identity (`offline:<ownerId>:<uuid>`) so a rename never orphans child rows.
+  owner_user_id text,
+  class_name text,
   current_series integer not null default 1,
   last_activity_at timestamptz,
   parent_group_id bigint references groups(id) on delete set null,
@@ -16,6 +21,15 @@ create table if not exists groups (
   updated_at timestamptz not null default now(),
   check (current_series > 0)
 );
+
+-- One class name per owner (offline rows only) + fast owner listing.
+create unique index if not exists uq_groups_owner_class
+  on groups (owner_user_id, class_name)
+  where owner_user_id is not null;
+
+create index if not exists idx_groups_owner_user_id
+  on groups (owner_user_id)
+  where owner_user_id is not null;
 
 create table if not exists group_settings (
   group_id bigint primary key references groups(id) on delete cascade,
@@ -110,6 +124,9 @@ create table if not exists sessions (
   ended_at timestamptz,
   ended_by text,
   archived boolean not null default false,
+  -- Optional teacher assigned to this session (nulls out if the teacher row is
+  -- removed). Used by offline classes and available to live sessions too.
+  teacher_id bigint references teachers(id) on delete set null,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

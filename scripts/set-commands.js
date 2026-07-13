@@ -50,6 +50,9 @@ const commands = [
   { command: 'removeclassrecord', description: 'حذف سجل حلقة من الدورة الحالية (لمنشئ المجموعة)' },
   { command: 'removestudentrecord', description: 'حذف سجل طالبة من الدورة الحالية (لمنشئ المجموعة)' },
 
+  // Offline (DM-only) classes
+  { command: 'offline', description: 'إدارة صفوفك وتسجيل الحضور بنفسك دون إضافة البوت لمجموعة' },
+
   // Utilities
   { command: 'sortnames', description: 'ترتيب أسماء (فوري أو start/add/done) (للمشرف)' },
   { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
