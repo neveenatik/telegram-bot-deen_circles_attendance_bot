@@ -174,8 +174,7 @@ test('editVerse: registeredSecondary sets awaiting and sends a force-reply promp
   const awaits = [];
   const storage = historyStorage({
     getAllSessions: async () => [recitationSession()],
-    getAwaiting: async () => null,
-    setAwaiting: async (...a) => { awaits.push(a); },
+    setReplyPrompt: async (...a) => { awaits.push(a); },
   });
   const { editVerse } = createHandlers({ storage });
   const { ctx, calls } = makeCtx({ admin: true, match: ['h:everse:123:2:1:u200:v0', '123', '2', '1', 'u200', '0'] });
@@ -290,8 +289,7 @@ test('editTitle: sets awaiting and sends a force-reply prompt', async () => {
   const awaits = [];
   const storage = historyStorage({
     getAllSessions: async () => [editorSession()],
-    getAwaiting: async () => null,
-    setAwaiting: async (...a) => { awaits.push(a); },
+    setReplyPrompt: async (...a) => { awaits.push(a); },
   });
   const { editTitle } = createHandlers({ storage });
   const { ctx, calls } = makeCtx({ admin: true, match: ['h:etitle:123:2:1:0', '123', '2', '1', '0'] });

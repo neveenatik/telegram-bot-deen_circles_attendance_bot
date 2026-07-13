@@ -42,8 +42,8 @@ test('onText: historyEditVerse writes the verse to the archived session and refr
     memberName: 'بكر', sessionType: 'registeredSecondary', promptMsgId: 556, awaitingPrompt: false,
   };
   const storage = makeStorage({
-    getAwaiting: async () => pending,
-    delAwaiting: async () => {},
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
     getSessions: async () => [session],
     saveSessions: async (_g, _t, sessions) => { saved = sessions; },
   });
@@ -75,8 +75,8 @@ test('onText: historyEditTitle renames the archived session and refreshes the ed
     sessionType: 'main', memberPage: 0, promptMsgId: 556, awaitingPrompt: false,
   };
   const storage = makeStorage({
-    getAwaiting: async () => pending,
-    delAwaiting: async () => {},
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
     getSessions: async () => [session],
     saveSessions: async (_g, _t, sessions) => { saved = sessions; },
   });

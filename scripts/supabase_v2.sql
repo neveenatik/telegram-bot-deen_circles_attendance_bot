@@ -34,6 +34,7 @@ create table if not exists members (
   name text not null,
   active boolean not null default true,
   list_number integer,
+  welcomed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (group_id, telegram_user_id)
@@ -193,22 +194,25 @@ create table if not exists group_progress (
   check (next_page > 0)
 );
 
--- Awaiting prompt state (per admin user per group)
-create table if not exists await_prompts (
+-- Force-reply prompt routing keyed by the prompt message's own id. reply_prompts
+-- allows many open prompts per admin: on reply, Telegram echoes
+-- reply_to_message.message_id which we look up here.
+create table if not exists reply_prompts (
   id bigserial primary key,
-  group_id bigint not null references groups(id) on delete cascade,
-  telegram_user_id text not null,
-  action text not null,
   chat_id text not null,
+  prompt_message_id bigint not null,
+  telegram_user_id text not null,
+  group_id text not null,
+  action text not null,
   host_message_id bigint,
-  prompt_message_id bigint,
-  awaiting_prompt boolean not null default false,
   payload jsonb not null default '{}'::jsonb,
   expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (group_id, telegram_user_id)
+  unique (chat_id, prompt_message_id)
 );
+
+create index if not exists idx_reply_prompts_expires_at on reply_prompts (expires_at);
 
 -- Deduplicate Telegram retries and ensure idempotency
 create table if not exists processed_updates (
@@ -266,12 +270,15 @@ create trigger trg_session_participants_updated_at
 before update on session_participants
 for each row execute function touch_updated_at();
 
-drop trigger if exists trg_await_prompts_updated_at on await_prompts;
-create trigger trg_await_prompts_updated_at
-before update on await_prompts
+drop trigger if exists trg_reply_prompts_updated_at on reply_prompts;
+create trigger trg_reply_prompts_updated_at
+before update on reply_prompts
 for each row execute function touch_updated_at();
 
 drop trigger if exists trg_processed_updates_updated_at on processed_updates;
+create trigger trg_processed_updates_updated_at
+before update on processed_updates
+for each row execute function touch_updated_at();
 create trigger trg_processed_updates_updated_at
 before update on processed_updates
 for each row execute function touch_updated_at();
@@ -315,9 +322,8 @@ alter table sessions enable row level security;
 alter table session_participants enable row level security;
 alter table member_progress enable row level security;
 alter table group_progress enable row level security;
-alter table await_prompts enable row level security;
 alter table processed_updates enable row level security;
-
+alter table reply_prompts enable row level security;
 -- ─── Scheduled retention: prune processed_updates ─────────────────────────────
 -- The processed_updates table is a dedup ledger for at-least-once webhook
 -- delivery. A row only matters while Telegram might redeliver the same
