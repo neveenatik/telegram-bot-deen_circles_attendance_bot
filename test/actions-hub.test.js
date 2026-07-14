@@ -23,7 +23,7 @@ test('/manage delivers the hub to the admin DM and acks in group', async () => {
   assert.equal(telegram.calls.sendMessage[0][0], ctx.from.id);
   assert.equal(telegram.calls.sendMessage[0][1], HUB.title);
   const data = telegram.calls.sendMessage[0][2].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
-  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'o:root', 'msg:dismiss']);
   assert.equal(calls.reply[0][0], TEXT.panelSentToDm);
 });
 
@@ -55,7 +55,7 @@ test('mg:home re-renders the hub in place', async () => {
   await h.home(ctx);
 
   assert.equal(calls.editMessageText[0][0], HUB.title);
-  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'o:root', 'msg:dismiss']);
 });
 
 test('mg:members opens the members panel with a back-to-hub row', async () => {
@@ -205,4 +205,103 @@ test('mg:tadd opens a force-reply prompt awaiting a group add', async () => {
 
   assert.equal(prompts[0].action, 'groupAddTeacher');
   assert.equal(prompts[0].groupId, '123');
+});
+
+// ── Training-groups editor ────────────────────────────────────────────
+
+const SAMPLE_TRAINING_GROUPS = [
+  { groupId: '-1001', name: 'تدريب أ' },
+  { groupId: '-1002', name: 'تدريب ب' },
+];
+
+test('mg:tgroups lists training groups with add, back-to-hub and close rows', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({ getTrainingGroups: async () => SAMPLE_TRAINING_GROUPS });
+  const { ctx, calls } = makeCtx({ match: ['mg:tgroups:123', '123'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.openTrainingGroups(ctx);
+
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(data.includes('mg:tgadd:123'), 'has add button');
+  assert.ok(data.includes('mg:tg:123:-1001'), 'first group is tappable');
+  assert.ok(data.includes('mg:tg:123:-1002'), 'second group is tappable');
+  assert.ok(data.includes('mg:home:123'), 'has back-to-hub row');
+  assert.ok(data.includes('msg:dismiss'), 'has close row');
+});
+
+test('mg:tg opens a training-group menu (rename / remove)', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({ getTrainingGroups: async () => SAMPLE_TRAINING_GROUPS });
+  const { ctx, calls } = makeCtx({ match: ['mg:tg:123:-1001', '123', '-1001'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.trainingGroupMenu(ctx);
+
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:tgstu:123:-1001', 'mg:tgren:123:-1001', 'mg:tgrm:123:-1001', 'mg:tgroups:123', 'msg:dismiss']);
+});
+
+test('mg:tgstu lists the training group roster with a back-to-menu row', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTrainingGroups: async () => SAMPLE_TRAINING_GROUPS,
+    getMaster: async (gid) => (String(gid) === '-1001'
+      ? { members: [{ userId: 11, name: 'مريم' }, { userId: 22, name: 'سارة' }] }
+      : { members: [] }),
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:tgstu:123:-1001', '123', '-1001'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.trainingGroupStudents(ctx);
+
+  assert.match(calls.editMessageText[0][0], /مريم/);
+  assert.match(calls.editMessageText[0][0], /سارة/);
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:tg:123:-1001', 'msg:dismiss']);
+});
+
+test('mg:tgrmx removes a training group and returns to the list', async () => {
+  const saved = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTrainingGroups: async () => JSON.parse(JSON.stringify(SAMPLE_TRAINING_GROUPS)),
+    saveTrainingGroups: async (_gid, list) => { saved.push(list); },
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:tgrmx:123:-1001', '123', '-1001'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.removeTrainingGroup(ctx);
+
+  assert.deepEqual(saved[0].map((g) => g.groupId), ['-1002']);
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(!data.includes('mg:tg:123:-1001'), 'removed group is gone');
+  assert.ok(data.includes('mg:tg:123:-1002'), 'remaining group stays');
+});
+
+test('mg:tgadd opens a force-reply prompt awaiting a training-group add', async () => {
+  const prompts = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({ setReplyPrompt: async (_c, _m, record) => { prompts.push(record); } });
+  const { ctx } = makeCtx({ match: ['mg:tgadd:123', '123'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.addTrainingGroupPrompt(ctx);
+
+  assert.equal(prompts[0].action, 'groupAddTrainingGroup');
+  assert.equal(prompts[0].groupId, '123');
+});
+
+test('mg:tgren opens a force-reply prompt awaiting a training-group rename', async () => {
+  const prompts = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTrainingGroups: async () => SAMPLE_TRAINING_GROUPS,
+    setReplyPrompt: async (_c, _m, record) => { prompts.push(record); },
+  });
+  const { ctx } = makeCtx({ match: ['mg:tgren:123:-1001', '123', '-1001'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.renameTrainingGroupPrompt(ctx);
+
+  assert.equal(prompts[0].action, 'groupRenameTrainingGroup');
+  assert.equal(prompts[0].trainingGroupId, '-1001');
 });
