@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+
+    // Incremental migration: legacy .js files coexist with new .ts files.
+    // We do NOT type-check the existing JavaScript yet (checkJs:false); new
+    // .ts code is fully strict. Flip checkJs on later as files are converted.
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+
+    // Vercel bundles /api (and its imports) with full TypeScript semantics, and
+    // tsx does the same locally, so tsc is used only for type-checking.
+    "noEmit": true,
+
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["lib/**/*.ts", "api/**/*.ts", "index.ts", "scripts/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules"]
+}
