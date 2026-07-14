@@ -23,7 +23,7 @@ test('/manage delivers the hub to the admin DM and acks in group', async () => {
   assert.equal(telegram.calls.sendMessage[0][0], ctx.from.id);
   assert.equal(telegram.calls.sendMessage[0][1], HUB.title);
   const data = telegram.calls.sendMessage[0][2].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
-  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'o:root', 'msg:dismiss']);
   assert.equal(calls.reply[0][0], TEXT.panelSentToDm);
 });
 
@@ -55,7 +55,7 @@ test('mg:home re-renders the hub in place', async () => {
   await h.home(ctx);
 
   assert.equal(calls.editMessageText[0][0], HUB.title);
-  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'o:root', 'msg:dismiss']);
 });
 
 test('mg:members opens the members panel with a back-to-hub row', async () => {
@@ -123,4 +123,86 @@ test('mg: actions are gated to admins of the originating group', async () => {
 
   assert.equal(calls.editMessageText.length, 0);
   assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
+});
+
+// ── Teachers editor ───────────────────────────────────────────────────
+
+const SAMPLE_TEACHERS = [
+  { userId: '111', name: 'أمل', type: 'courseteacher' },
+  { userId: '222', name: 'هدى', type: 'recitationteacher' },
+];
+
+test('mg:teach lists teachers with add, back-to-hub and close rows', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({ getTeachers: async () => SAMPLE_TEACHERS });
+  const { ctx, calls } = makeCtx({ match: ['mg:teach:123', '123'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.openTeachers(ctx);
+
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(data.includes('mg:tadd:123'), 'has add-teacher button');
+  assert.ok(data.includes('mg:tch:123:111'), 'first teacher is tappable');
+  assert.ok(data.includes('mg:tch:123:222'), 'second teacher is tappable');
+  assert.ok(data.includes('mg:home:123'), 'has back-to-hub row');
+  assert.ok(data.includes('msg:dismiss'), 'has close row');
+});
+
+test('mg:tch opens a teacher menu (rename / change type / remove)', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({ getTeachers: async () => SAMPLE_TEACHERS });
+  const { ctx, calls } = makeCtx({ match: ['mg:tch:123:111', '123', '111'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.teacherMenu(ctx);
+
+  const data = cbData(calls, 'editMessageText');
+  assert.deepEqual(data, ['mg:tren:123:111', 'mg:ttype:123:111', 'mg:trm:123:111', 'mg:teach:123', 'msg:dismiss']);
+});
+
+test('mg:ttset changes a teacher type and persists it', async () => {
+  const saved = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTeachers: async () => JSON.parse(JSON.stringify(SAMPLE_TEACHERS)),
+    saveTeachers: async (_gid, list) => { saved.push(list); },
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:ttset:123:111:trainingteacher', '123', '111', 'trainingteacher'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.setTeacherType(ctx);
+
+  assert.equal(saved[0].find((t) => t.userId === '111').type, 'trainingteacher');
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:tren:123:111', 'mg:ttype:123:111', 'mg:trm:123:111', 'mg:teach:123', 'msg:dismiss']);
+});
+
+test('mg:trmx removes a teacher and returns to the list', async () => {
+  const saved = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTeachers: async () => JSON.parse(JSON.stringify(SAMPLE_TEACHERS)),
+    saveTeachers: async (_gid, list) => { saved.push(list); },
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:trmx:123:111', '123', '111'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.removeTeacher(ctx);
+
+  assert.deepEqual(saved[0].map((t) => t.userId), ['222']);
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(!data.includes('mg:tch:123:111'), 'removed teacher is gone');
+  assert.ok(data.includes('mg:tch:123:222'), 'remaining teacher stays');
+});
+
+test('mg:tadd opens a force-reply prompt awaiting a group add', async () => {
+  const prompts = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({ setReplyPrompt: async (_c, _m, record) => { prompts.push(record); } });
+  const { ctx } = makeCtx({ match: ['mg:tadd:123', '123'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.addTeacherPrompt(ctx);
+
+  assert.equal(prompts[0].action, 'groupAddTeacher');
+  assert.equal(prompts[0].groupId, '123');
 });
