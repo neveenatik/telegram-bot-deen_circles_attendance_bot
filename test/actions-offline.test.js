@@ -61,8 +61,58 @@ test('roster: lists students for owner', async () => {
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:roster:5:0', '5', '0'] });
   await roster(ctx);
   assert.equal(calls.editMessageText.length, 1);
-  assert.match(calls.editMessageText[0][0], /مريم/);
-  assert.match(calls.editMessageText[0][0], /خديجة/);
+  // Students are rendered as tappable buttons (by list number), not body text.
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const labels = kb.flat().map((b) => b.text).join(' ');
+  assert.match(labels, /مريم/);
+  assert.match(labels, /خديجة/);
+});
+
+test('roster: orders students by list number, not the alphabet', async () => {
+  const store = offlineStorage({
+    getMaster: async () => ({ members: [
+      { userId: 'offline:u2', name: 'خديجة', listNumber: 2 },
+      { userId: 'offline:u1', name: 'مريم', listNumber: 1 },
+    ] }),
+  });
+  const { roster } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:roster:5:0', '5', '0'] });
+  await roster(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const studentRows = kb.flat().filter((b) => /^\d+\./.test(b.text));
+  assert.match(studentRows[0].text, /^1\. مريم/);
+  assert.match(studentRows[1].text, /^2\. خديجة/);
+  assert.equal(studentRows[0].callback_data, 'o:stu:5:1:0');
+});
+
+test('studentMenu: owner sees rename/remove options', async () => {
+  const { studentMenu } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:stu:5:1:0', '5', '1', '0'] });
+  await studentMenu(ctx);
+  assert.equal(calls.editMessageText.length, 1);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:srename:5:1:0'));
+  assert.ok(data.includes('o:sremove:5:1:0'));
+});
+
+test('studentMenu: unknown list number answers not found', async () => {
+  const { studentMenu } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:stu:5:99:0', '5', '99', '0'] });
+  await studentMenu(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.offline.studentNotFound]]);
+});
+
+test('removeStudent: soft-deletes and refreshes the roster', async () => {
+  let removedWith = null;
+  const store = offlineStorage({
+    removeOfflineStudent: async (gid, ln) => { removedWith = { gid, ln }; return { ok: true, name: 'مريم' }; },
+    getMaster: async () => ({ members: [{ userId: 'offline:u2', name: 'خديجة', listNumber: 2 }] }),
+  });
+  const { removeStudent } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sremx:5:1:0', '5', '1', '0'] });
+  await removeStudent(ctx);
+  assert.deepEqual(removedWith, { gid: 'offline:999:abc', ln: '1' });
+  assert.equal(calls.editMessageText.length, 1);
 });
 
 test('createSession: seeds roster participants and saves the session', async () => {
