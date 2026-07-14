@@ -196,6 +196,7 @@ erDiagram
 | `await_prompts` | Tracks "waiting for the admin's next text reply" (see §8). One row per `(group, admin)`. |
 | `processed_updates` | Dedupe log so a Telegram retry can't double-process an update. No foreign keys. |
 | `class_managers` | Delegates for **offline (DM) classes** (see §11). One row per `(group, user)` with a `manager_role` of `operator` or `assistant`. The class owner stays in `groups.owner_user_id`. |
+| `class_materials` | Teaching materials per class. Stores only Telegram's `file_id` (Telegram hosts the bytes) plus a title and `file_type` (`document` / `photo` / `video` / `audio`). Soft-deleted via `active`. Reused to resend the file on demand (see §10/§11). |
 
 **Two things worth remembering:**
 - A participant is a member **or** a guest — the row uses `member_id` for
@@ -226,8 +227,9 @@ flowchart TD
     ROUTE -->|command| CMD[Command handler]
     ROUTE -->|button tap| ACT[Action handler]
     ROUTE -->|text reply| TXT[Awaiting-prompt handler]
-    CMD & ACT & TXT --> DONE[Mark processed]
-    CMD & ACT & TXT -. error .-> CATCH[Log + notify user] --> FAIL[Mark failed]
+    ROUTE -->|file upload| MED[Media handler:<br/>capture material file_id]
+    CMD & ACT & TXT & MED --> DONE[Mark processed]
+    CMD & ACT & TXT & MED -. error .-> CATCH[Log + notify user] --> FAIL[Mark failed]
 ```
 
 - De-duplication only guards the **same** update being redelivered; different
@@ -382,7 +384,14 @@ flowchart LR
 ```
 
 Waiting actions: add member, rename, edit pending registration, add guest, edit
-session name, edit page, edit verse. (`/feedback` uses a separate mechanism.)
+session name, edit page, edit verse, upload teaching material. (`/feedback` uses
+a separate mechanism.)
+
+One action reads a **file** instead of text: uploading a teaching material. It
+reuses the same force-reply record (`action: 'materialUpload'`), but because
+`onText` only fires for text messages, a sibling media handler
+(`bot.on(['document','photo','video','audio'])`) consumes the reply, reads the
+`file_id`, and uses the message caption as the title (single-step add).
 
 ---
 
@@ -424,6 +433,7 @@ flowchart TD
     HUB --> HIST[History — /classhistory panel]
     HUB --> TEACH[Teachers editor:<br/>add / rename / type / remove]
     HUB --> TG[Training-groups editor:<br/>add / rename / remove / view roster]
+    HUB --> MAT[Teaching materials:<br/>add / send to group / remove]
     HUB --> OFF[Offline classes — o:root]
 ```
 
@@ -433,6 +443,9 @@ flowchart TD
 - The **teachers** and **training-groups** editors are fully interactive (they
   mirror the offline teachers panel's wording) and key their callbacks on the
   unique `userId` / `groupId`.
+- The **teaching materials** panel (owner/operator only) lists a class's stored
+  files; from the group hub a material's action is **send to the group** (the
+  bot resends the file live into the class chat).
 - The **offline** button points at the user-owned `o:root` entry (§11) — offline
   classes self-gate, so no group id is needed.
 
@@ -458,6 +471,7 @@ flowchart TD
     HOME --> ROSTER[Students: add / rename / remove /<br/>assign to a training group]
     HOME --> TEACH[Teachers: add / rename / change type / remove]
     HOME --> SESS[Sessions: start · mark attendance · report]
+    HOME --> MAT[Materials: add / send to me / remove]
     HOME --> MGRS[Managers: add / role / rename / remove / invite]
     SESS --> ASSIGN[Assign a teacher to the session]
     ASSIGN --> REPORT[Teacher name shown atop the report]
@@ -475,7 +489,7 @@ Delegates live in `class_managers` with a `manager_role`. The owner stays in
 | Rename class · manage owner/operators | ✅ | — | — |
 | Add / manage assistants | ✅ | ✅ | — |
 | Clone shared class into own classes | — | ✅ | — |
-| Edit roster · edit teachers | ✅ | ✅ | — |
+| Edit roster · edit teachers · manage materials | ✅ | ✅ | — |
 | Create session · assign teacher · delete session | ✅ | ✅ | — |
 | Edit attendance · view reports | ✅ | ✅ | ✅ |
 
@@ -510,7 +524,9 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `pr:*` | Pending registrations / register widget | `actions/members.js` |
 | `h:*` | History browse & edit | `actions/history.js` |
 | `mg:*` | Admin control hub (`/manage`): members, pending, history, teachers, training groups | `actions/hub.js` |
+| `mg:mat*` | Teaching materials from the `/manage` hub (add / send to group / remove) | `actions/materials.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
+| `o:mat*` | Teaching materials from the offline class hub (add / send to me / remove) | `actions/materials.ts` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |
 | `aw:cancel` | Cancel a text-reply prompt | `actions/manage.js` |
 | `msg:dismiss` | Delete an inline widget | `actions/history.js` |

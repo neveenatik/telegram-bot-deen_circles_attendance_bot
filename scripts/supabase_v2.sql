@@ -104,6 +104,28 @@ create table if not exists class_managers (
 create index if not exists idx_class_managers_user_id
   on class_managers (user_id);
 
+-- Teaching materials: files (documents/photos/videos/audio) an admin or operator
+-- uploads for a class. We store only Telegram's file_id (Telegram hosts the
+-- bytes); the same file_id is reused to resend the file to the group (live) or
+-- back to the uploader's DM (offline). Scoped to a class and cascades on delete.
+create table if not exists class_materials (
+  id bigserial primary key,
+  group_id bigint not null references groups(id) on delete cascade,
+  title text not null,
+  file_id text not null,
+  file_type text not null,
+  file_name text,
+  added_by text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (file_type in ('document', 'photo', 'video', 'audio'))
+);
+
+create index if not exists idx_class_materials_group_active
+  on class_materials (group_id, created_at)
+  where active = true;
+
 -- Pending registration queue from /myid
 create table if not exists pending_registrations (
   id bigserial primary key,
@@ -298,6 +320,11 @@ create trigger trg_class_managers_updated_at
 before update on class_managers
 for each row execute function touch_updated_at();
 
+drop trigger if exists trg_class_materials_updated_at on class_materials;
+create trigger trg_class_materials_updated_at
+before update on class_materials
+for each row execute function touch_updated_at();
+
 drop trigger if exists trg_pending_registrations_updated_at on pending_registrations;
 create trigger trg_pending_registrations_updated_at
 before update on pending_registrations
@@ -360,6 +387,7 @@ alter table groups enable row level security;
 alter table group_settings enable row level security;
 alter table members enable row level security;
 alter table teachers enable row level security;
+alter table class_materials enable row level security;
 alter table pending_registrations enable row level security;
 alter table sessions enable row level security;
 alter table session_participants enable row level security;
