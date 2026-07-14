@@ -131,6 +131,9 @@ export function makeStorage(overrides = {}) {
     addMembers: async () => {},
     deleteSession: async () => ({ ok: true }),
     touchClassManagerName: async () => ({ ok: true }),
+    renameOfflineTeacher: async () => ({ ok: true, name: 'معلمة' }),
+    setOfflineTeacherType: async () => ({ ok: true, name: 'معلمة', type: 'courseteacher' }),
+    removeOfflineTeacher: async () => ({ ok: true, name: 'معلمة' }),
     cloneOfflineClass: async () => ({ ok: true, rowId: 99, groupId: 'offline:x', name: 'صف (نسخة)', students: 0, teachers: 0 }),
     ...overrides,
   };

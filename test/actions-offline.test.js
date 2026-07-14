@@ -328,6 +328,87 @@ test('createSession: assistant is denied', async () => {
   assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
 });
 
+test('teachers: each teacher is a tappable button showing her type', async () => {
+  const { teachers } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:teach:5', '5'] });
+  await teachers(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:addteach:5'));
+  assert.ok(data.includes('o:tch:5:7')); // teacher id 7 from the fixture
+  const labels = kb.flat().map((b) => b.text).join(' ');
+  assert.match(labels, /أمل/);
+});
+
+test('teacherMenu: offers rename, change-type and remove', async () => {
+  const { teacherMenu } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tch:5:7', '5', '7'] });
+  await teacherMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:tren:5:7'));
+  assert.ok(data.includes('o:ttype:5:7'));
+  assert.ok(data.includes('o:trm:5:7'));
+});
+
+test('renameTeacherPrompt: opens a force-reply awaiting the new name', async () => {
+  let record = null;
+  const store = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { record = rec; } });
+  const { renameTeacherPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:tren:5:7', '5', '7'] });
+  await renameTeacherPrompt(ctx);
+  assert.equal(record.action, 'offlineRenameTeacher');
+  assert.equal(record.teacherId, '7');
+  assert.equal(String(record.gref), '5');
+});
+
+test('teacherTypeMenu: lists the types and marks the current one', async () => {
+  const { teacherTypeMenu } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttype:5:7', '5', '7'] });
+  await teacherTypeMenu(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:ttset:5:7:courseteacher'));
+  assert.ok(data.includes('o:ttset:5:7:trainingteacher'));
+  assert.ok(data.includes('o:ttset:5:7:recitationteacher'));
+  const current = kb.flat().find((b) => b.callback_data === 'o:ttset:5:7:courseteacher');
+  assert.match(current.text, /✅/); // current type is marked
+});
+
+test('setTeacherType: changes the type and refreshes the teacher menu', async () => {
+  let changed = null;
+  const store = offlineStorage({
+    setOfflineTeacherType: async (gid, id, type) => { changed = { gid, id, type }; return { ok: true, name: 'أمل', type }; },
+    getTeachers: async () => [{ id: 7, userId: 'offline:t1', name: 'أمل', type: 'trainingteacher' }],
+  });
+  const { setTeacherType } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttset:5:7:trainingteacher', '5', '7', 'trainingteacher'] });
+  await setTeacherType(ctx);
+  assert.equal(changed.id, '7');
+  assert.equal(changed.type, 'trainingteacher');
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('removeTeacher: soft-deletes and refreshes the teacher list', async () => {
+  let removed = null;
+  const store = offlineStorage({
+    removeOfflineTeacher: async (gid, id) => { removed = { gid, id }; return { ok: true, name: 'أمل' }; },
+    getTeachers: async () => [],
+  });
+  const { removeTeacher } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:trmx:5:7', '5', '7'] });
+  await removeTeacher(ctx);
+  assert.equal(removed.id, '7');
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('teacherMenu: assistant is denied', async () => {
+  const { teacherMenu } = handlers(withRole('assistant'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:tch:5:7', '5', '7'] });
+  await teacherMenu(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
+});
+
 test('managersMenu: owner lists managers with add button', async () => {
   const store = offlineStorage({
     listClassManagers: async () => [
