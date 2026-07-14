@@ -10,6 +10,7 @@ const commands = [
 
   // Session management
   { command: 'status', description: 'ملخص حالة المجموعة (للمشرف)' },
+  { command: 'manage', description: 'لوحة الإدارة الموحّدة (تُفتح بالخاص): الطالبات، الطلبات، السجلات، المعلمات، ومجموعات التدريب (للمشرف)' },
   { command: 'startlist', description: 'بدء قائمة للحلقة الرئيسية للمسجلات (للمشرف)' },
   { command: 'starttraininglist', description: 'بدء جلسة حضور في مجموعة التدريب (للمشرف)' },
   { command: 'startopenlist', description: 'بدء قائمة مفتوحة لأي طالبة (للمشرف)' },

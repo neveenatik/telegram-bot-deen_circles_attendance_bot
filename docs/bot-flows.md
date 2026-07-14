@@ -20,7 +20,9 @@ Contents:
 7. [Training-group walk-ins](#7-training-group-walk-ins)
 8. [Text-reply prompts](#8-text-reply-prompts)
 9. [History & reports](#9-history--reports)
-10. [Appendix: callback prefixes](#10-appendix-callback-prefixes)
+10. [Admin control hub (`/manage`)](#10-admin-control-hub-manage)
+11. [Offline (DM) classes & delegation](#11-offline-dm-classes--delegation)
+12. [Appendix: callback prefixes](#12-appendix-callback-prefixes)
 
 ---
 
@@ -42,8 +44,10 @@ erDiagram
     groups ||--o{ member_progress : "member progress"
     groups ||--o{ group_progress : "group progress"
     groups ||--o{ await_prompts : "pending replies"
+    groups ||--o{ class_managers : "delegates (offline)"
 
     sessions ||--o{ session_participants : "attendees"
+    sessions ||--o| teachers : "assigned teacher (nullable)"
     members  ||--o{ session_participants : "attends as (nullable)"
     members  ||--o{ member_progress : "progress"
 ```
@@ -82,6 +86,7 @@ erDiagram
         int current_series "term counter"
         timestamptz last_activity_at
         bigint parent_group_id FK "self → main group"
+        text owner_user_id "set for offline (DM) classes"
     }
     group_settings {
         bigint group_id PK "FK to groups"
@@ -94,6 +99,7 @@ erDiagram
         text telegram_user_id "UK with group"
         text name "UK with group when active"
         bool active
+        bigint training_group_id "offline: student's sub-group (nullable)"
     }
     teachers {
         bigint id PK
@@ -124,6 +130,7 @@ erDiagram
         int group_recitation_next_page "atomic allocator"
         bool archived
         jsonb metadata
+        bigint teacher_id FK "assigned teacher (nullable)"
     }
     session_participants {
         bigint id PK
@@ -164,6 +171,13 @@ erDiagram
         int retry_count
         text last_error
     }
+    class_managers {
+        bigint group_id FK "PK with user_id"
+        text user_id "PK with group_id"
+        text manager_role "operator/assistant"
+        text display_name
+        text added_by
+    }
 ```
 
 ### What each table is for
@@ -181,12 +195,19 @@ erDiagram
 | `group_progress` | Group-wide next recitation page (group mode). |
 | `await_prompts` | Tracks "waiting for the admin's next text reply" (see §8). One row per `(group, admin)`. |
 | `processed_updates` | Dedupe log so a Telegram retry can't double-process an update. No foreign keys. |
+| `class_managers` | Delegates for **offline (DM) classes** (see §11). One row per `(group, user)` with a `manager_role` of `operator` or `assistant`. The class owner stays in `groups.owner_user_id`. |
 
 **Two things worth remembering:**
 - A participant is a member **or** a guest — the row uses `member_id` for
   registered people and `guest_name` for walk-ins.
 - Group-recitation page numbers come from `allocate_group_recitation_page()`, a
   single locked DB update, so simultaneous taps never grab the same page.
+
+**Offline (DM) classes reuse the same tables.** A DM-managed class is just a
+`groups` row whose `telegram_chat_id` is synthetic (`offline:<owner>:<uuid>`)
+and whose `owner_user_id` is set. Its roster lives in `members`, its teachers in
+`teachers`, its delegates in `class_managers`, and each session may point at a
+teacher via `sessions.teacher_id`. See §11.
 
 ---
 
@@ -221,12 +242,13 @@ Access: **A** = admin, **C** = group creator, **—** = anyone.
 
 | Area | Commands |
 |------|----------|
-| **Info** | `/start` A · `/help` — · `/myid` — · `/groupid` A · `/register` A |
+| **Info** | `/start` A · `/help` — · `/myid` — · `/groupid` A · `/register` A · `/manage` A (DM hub) |
 | **Sessions** | `/startlist` `/startopenlist` `/startsecondarylist` `/startpersonalrecitation` `/startgrouprecitation` `/starttraininglist` (all A) · `/freezelist` A · `/stoplist` A · `/lastreport` — |
 | **Members** | `/students` A · `/pendingstudents` A · `/addstudent` A · `/removestudent` A · `/removeallstudents` C |
 | **Teachers** | `/addteacher` A · `/addteacherreply` A |
 | **Training groups** | `/addtraininggroup` `/removetraininggroup` `/listtraininggroups` `/listtrainingstudents` (all A) |
 | **History** | `/classhistory` A · `/studentshistory` A · `/newclass` C · `/removeclassrecord` C · `/removestudentrecord` C |
+| **Offline (DM)** | `/offline` — (manage private classes in DM; see §11) |
 | **Utility** | `/sortnames` A · `/tagstudents` A · `/feedback` — |
 
 Handlers live under `lib/handlers/commands/`.
@@ -383,7 +405,99 @@ flowchart TD
 
 ---
 
-## 10. Appendix: callback prefixes
+## 10. Admin control hub (`/manage`)
+
+Live attendance lists stay in the group (students tap them). **Every other admin
+surface is reached from one private hub.** `/manage` (admin-only) is delivered to
+the admin's DM; its buttons launch the existing panels by editing the hub
+message in place. Each button carries the originating group id
+(`mg:<action>:<groupId>`) so taps authorize against that group even though
+`isAdmin(ctx)` is false in a private chat.
+
+```mermaid
+flowchart TD
+    CMD[/manage in group] --> DM{Can DM the admin?}
+    DM -->|no| NUDGE[Group nudge with<br/>?start=manage deep link]
+    DM -->|yes| HUB[Hub panel in DM]
+    HUB --> MEMB[Members — /students panel]
+    HUB --> PEND[Pending — /pendingstudents panel]
+    HUB --> HIST[History — /classhistory panel]
+    HUB --> TEACH[Teachers editor:<br/>add / rename / type / remove]
+    HUB --> TG[Training-groups editor:<br/>add / rename / remove / view roster]
+    HUB --> OFF[Offline classes — o:root]
+```
+
+- The members / pending / history buttons reuse the exact panels that
+  `/students`, `/pendingstudents`, and `/classhistory` deliver to DM — a
+  "back to hub" row is spliced in above their Close button.
+- The **teachers** and **training-groups** editors are fully interactive (they
+  mirror the offline teachers panel's wording) and key their callbacks on the
+  unique `userId` / `groupId`.
+- The **offline** button points at the user-owned `o:root` entry (§11) — offline
+  classes self-gate, so no group id is needed.
+
+---
+
+## 11. Offline (DM) classes & delegation
+
+Anyone can run classes **entirely in a private chat with the bot** — no group
+needed. Everything is button-driven and starts with `/offline`. Under the hood a
+class is a regular `groups` row with a synthetic `telegram_chat_id`
+(`offline:<owner>:<uuid>`) and an `owner_user_id`; its roster, teachers, and
+sessions reuse the same tables as group classes (§1). The shared session editor
+and report generator are reused too — offline just swaps the access gate and the
+callback namespace (`o:` instead of `h:`).
+
+```mermaid
+flowchart TD
+    START[/offline in DM] --> ROOT{Owned + shared?}
+    ROOT --> MINE[My classes]
+    ROOT --> SHARED[Classes shared with me]
+    MINE --> HOME[Class home]
+    SHARED --> HOME
+    HOME --> ROSTER[Students: add / rename / remove /<br/>assign to a training group]
+    HOME --> TEACH[Teachers: add / rename / change type / remove]
+    HOME --> SESS[Sessions: start · mark attendance · report]
+    HOME --> MGRS[Managers: add / role / rename / remove / invite]
+    SESS --> ASSIGN[Assign a teacher to the session]
+    ASSIGN --> REPORT[Teacher name shown atop the report]
+    MGRS --> CLONE[Operator: clone shared class into own]
+```
+
+### Roles & capabilities
+
+Delegates live in `class_managers` with a `manager_role`. The owner stays in
+`groups.owner_user_id`. Capabilities are resolved by `capsFor(role)` in
+`actions/offline.js`.
+
+| Capability | Owner | Operator | Assistant |
+|------------|:-----:|:--------:|:---------:|
+| Rename class · manage owner/operators | ✅ | — | — |
+| Add / manage assistants | ✅ | ✅ | — |
+| Clone shared class into own classes | — | ✅ | — |
+| Edit roster · edit teachers | ✅ | ✅ | — |
+| Create session · assign teacher · delete session | ✅ | ✅ | — |
+| Edit attendance · view reports | ✅ | ✅ | ✅ |
+
+### Invitations
+
+An owner or operator generates a **join invitation** carrying a deep link
+(`https://t.me/<bot>?start=offline`). The invited sister opens it to start a DM
+with the bot, then picks “classes shared with me” to reach the class. The
+`?start=offline` payload is routed by the offline `bot.start` handler (the
+info-command `/start` yields to it for that payload).
+
+### Training groups (per class)
+
+An offline class can define its own **training groups** — lightweight sub-group
+labels created, renamed, and removed from the class home. A student is assigned
+to one from her member menu, stored on `members.training_group_id`, and each
+group can list its assigned students. (These are *labels within one class* — not
+the linked Telegram groups used by online training sessions in §7.)
+
+---
+
+## 12. Appendix: callback prefixes
 
 Button taps carry a compact `prefix:...` payload. For contributors:
 
@@ -395,6 +509,8 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `mb:atrain*` | Assign member to a training group | `actions/groups.js` |
 | `pr:*` | Pending registrations / register widget | `actions/members.js` |
 | `h:*` | History browse & edit | `actions/history.js` |
+| `mg:*` | Admin control hub (`/manage`): members, pending, history, teachers, training groups | `actions/hub.js` |
+| `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |
 | `aw:cancel` | Cancel a text-reply prompt | `actions/manage.js` |
 | `msg:dismiss` | Delete an inline widget | `actions/history.js` |
