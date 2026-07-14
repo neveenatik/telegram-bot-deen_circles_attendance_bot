@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHandlers } from '../lib/handlers/actions/text.js';
 import { archivedSessionKey } from '../lib/historyUtils.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
+import { TEXT } from '../lib/text.js';
 
 test('onText: a command message passes through to the next middleware', async () => {
   const { onText } = createHandlers({ storage: makeStorage(), telegram: makeTelegram() });
@@ -130,5 +131,108 @@ test('onText: groupRenameTeacher renames by userId and refreshes the teacher men
 
   assert.equal(saved[0].name, 'أمل عبد الله');
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the teacher menu');
+});
+
+test('onText: groupAddTrainingGroup parses "id | name", links and refreshes the list', async () => {
+  let saved = null;
+  let parented = null;
+  const pending = { action: 'groupAddTrainingGroup', groupId: '123', chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    getTrainingGroups: async () => [],
+    saveTrainingGroups: async (_g, list) => { saved = list; },
+    setParentGroup: async (child, parent) => { parented = [child, parent]; },
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: '-1001234567890 | تدريب المجموعة الأولى' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.deepEqual(saved, [{ groupId: '-1001234567890', name: 'تدريب المجموعة الأولى' }]);
+  assert.deepEqual(parented, ['-1001234567890', '123']);
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the training-groups panel');
+});
+
+test('onText: groupRenameTrainingGroup renames by groupId and refreshes the menu', async () => {
+  let saved = null;
+  const pending = { action: 'groupRenameTrainingGroup', groupId: '123', chatId: 42, msgId: 555, trainingGroupId: '-1001', awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    getTrainingGroups: async () => [{ groupId: '-1001', name: 'تدريب أ' }],
+    saveTrainingGroups: async (_g, list) => { saved = list; },
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'تدريب المجموعة الجديدة' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.equal(saved[0].name, 'تدريب المجموعة الجديدة');
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the training-group menu');
+});
+
+test('onText: offlineAddTrainingGroup adds a label and refreshes the panel', async () => {
+  let addedName = null;
+  const pending = { action: 'offlineAddTrainingGroup', groupId: 'offline:9:x', gref: 5, chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    addOfflineTrainingGroup: async (_g, name) => { addedName = name; return { ok: true, group: { id: 'tg-1', name } }; },
+    getOfflineTrainingGroups: async () => [{ id: 'tg-1', name: 'تدريب أ' }],
+    getOfflineClassById: async () => ({ rowId: 5, groupId: 'offline:9:x', name: 'صف' }),
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'تدريب أ' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.equal(addedName, 'تدريب أ');
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the training-groups panel');
+});
+
+test('onText: offlineAddTrainingGroup reports a duplicate name', async () => {
+  const pending = { action: 'offlineAddTrainingGroup', groupId: 'offline:9:x', gref: 5, chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    addOfflineTrainingGroup: async () => ({ ok: false, reason: 'duplicate' }),
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx, calls } = makeCtx({ text: 'تدريب أ' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.equal(telegram.calls.editMessageText.length, 0, 'no refresh on failure');
+  assert.equal(calls.reply[0][0], TEXT.offline.trainingGroupDuplicate);
+});
+
+test('onText: offlineRenameTrainingGroup renames and refreshes the menu', async () => {
+  let renamedWith = null;
+  const pending = { action: 'offlineRenameTrainingGroup', groupId: 'offline:9:x', gref: 5, trainingGroupId: 'tg-1', chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    renameOfflineTrainingGroup: async (_g, id, name) => { renamedWith = { id, name }; return { ok: true, name }; },
+    getOfflineTrainingGroups: async () => [{ id: 'tg-1', name: 'تدريب الجديد' }],
+    getOfflineClassById: async () => ({ rowId: 5, groupId: 'offline:9:x', name: 'صف' }),
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'تدريب الجديد' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.deepEqual(renamedWith, { id: 'tg-1', name: 'تدريب الجديد' });
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the training-group menu');
 });
 

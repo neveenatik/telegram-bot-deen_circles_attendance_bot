@@ -50,6 +50,7 @@ create table if not exists members (
   list_number integer,
   welcomed_at timestamptz,
   created_at timestamptz not null default now(),
+  training_group_id text,
   updated_at timestamptz not null default now(),
   unique (group_id, telegram_user_id)
 );

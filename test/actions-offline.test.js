@@ -654,3 +654,154 @@ test('sharedClasses: lists classes shared with the delegate', async () => {
   assert.ok(data.includes('o:cls:9'));
   assert.ok(!data.includes('o:new')); // delegates cannot create classes
 });
+
+// ── Training groups (offline) ─────────────────────────────────────────
+
+const SAMPLE_TG = [
+  { id: 'tg-a', name: 'تدريب أ' },
+  { id: 'tg-b', name: 'تدريب ب' },
+];
+
+test('classHome: owner sees a training-groups button', async () => {
+  const { classHome } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:cls:5', '5'] });
+  await classHome(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:tgs:5'), 'has training-groups button');
+});
+
+test('trainingGroups: lists groups with add, back and close rows', async () => {
+  const store = offlineStorage({ getOfflineTrainingGroups: async () => SAMPLE_TG });
+  const { trainingGroups } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tgs:5', '5'] });
+  await trainingGroups(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:tgadd:5'), 'has add button');
+  assert.ok(data.includes('o:tg:5:tg-a'), 'first group tappable');
+  assert.ok(data.includes('o:tg:5:tg-b'), 'second group tappable');
+  assert.ok(data.includes('o:cls:5'), 'has back-to-class row');
+});
+
+test('trainingGroupMenu: opens rename/remove for a group', async () => {
+  const store = offlineStorage({ getOfflineTrainingGroups: async () => SAMPLE_TG });
+  const { trainingGroupMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tg:5:tg-a', '5', 'tg-a'] });
+  await trainingGroupMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:tgstu:5:tg-a'));
+  assert.ok(data.includes('o:tgren:5:tg-a'));
+  assert.ok(data.includes('o:tgrm:5:tg-a'));
+  assert.ok(data.includes('o:tgs:5'), 'back to the list');
+});
+
+test('trainingGroupStudentsView: lists the students assigned to the group', async () => {
+  const store = offlineStorage({
+    getOfflineTrainingGroups: async () => SAMPLE_TG,
+    getMaster: async () => ({ members: [
+      { userId: 'offline:u1', name: 'مريم', listNumber: 1, trainingGroupId: 'tg-a' },
+      { userId: 'offline:u2', name: 'خديجة', listNumber: 2, trainingGroupId: 'tg-b' },
+      { userId: 'offline:u3', name: 'سارة', listNumber: 3, trainingGroupId: 'tg-a' },
+    ] }),
+  });
+  const { trainingGroupStudentsView } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tgstu:5:tg-a', '5', 'tg-a'] });
+  await trainingGroupStudentsView(ctx);
+  const body = calls.editMessageText[0][0];
+  assert.match(body, /مريم/);
+  assert.match(body, /سارة/);
+  assert.ok(!body.includes('خديجة'), 'excludes students of other groups');
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:tg:5:tg-a'), 'back to the group menu');
+});
+
+test('removeTrainingGroup: deletes and refreshes the list', async () => {
+  let removedWith = null;
+  const store = offlineStorage({
+    removeOfflineTrainingGroup: async (gid, id) => { removedWith = { gid, id }; return { ok: true, name: 'تدريب أ' }; },
+    getOfflineTrainingGroups: async () => [{ id: 'tg-b', name: 'تدريب ب' }],
+  });
+  const { removeTrainingGroup } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tgrmx:5:tg-a', '5', 'tg-a'] });
+  await removeTrainingGroup(ctx);
+  assert.deepEqual(removedWith, { gid: 'offline:999:abc', id: 'tg-a' });
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(!data.includes('o:tg:5:tg-a'), 'removed group is gone');
+  assert.ok(data.includes('o:tg:5:tg-b'), 'remaining group stays');
+});
+
+test('addTrainingGroupPrompt: opens a force-reply awaiting an add', async () => {
+  const prompts = [];
+  const store = offlineStorage({ setReplyPrompt: async (_c, _m, record) => { prompts.push(record); } });
+  const { addTrainingGroupPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:tgadd:5', '5'] });
+  await addTrainingGroupPrompt(ctx);
+  assert.equal(prompts[0].action, 'offlineAddTrainingGroup');
+  assert.equal(prompts[0].gref, 5);
+});
+
+test('studentMenu: shows the training-assign button with the current group', async () => {
+  const store = offlineStorage({
+    getOfflineTrainingGroups: async () => SAMPLE_TG,
+    getMaster: async () => ({ members: [{ userId: 'offline:u1', name: 'مريم', listNumber: 1, trainingGroupId: 'tg-a' }] }),
+  });
+  const { studentMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:stu:5:1:0', '5', '1', '0'] });
+  await studentMenu(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat();
+  const assignBtn = kb.find((b) => b.callback_data === 'o:sassign:5:1:0');
+  assert.ok(assignBtn, 'has an assign button');
+  assert.match(assignBtn.text, /تدريب أ/, 'shows the current training group name');
+});
+
+test('studentTrainingPicker: lists groups, marks current, offers unassign', async () => {
+  const store = offlineStorage({
+    getOfflineTrainingGroups: async () => SAMPLE_TG,
+    getMaster: async () => ({ members: [{ userId: 'offline:u1', name: 'مريم', listNumber: 1, trainingGroupId: 'tg-a' }] }),
+  });
+  const { studentTrainingPicker } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sassign:5:1:0', '5', '1', '0'] });
+  await studentTrainingPicker(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat();
+  const data = kb.map((b) => b.callback_data);
+  assert.ok(data.includes('o:sasx:5:1:0:tg-a'));
+  assert.ok(data.includes('o:sasx:5:1:0:tg-b'));
+  assert.ok(data.includes('o:sunx:5:1:0'), 'offers unassign since she is assigned');
+  const marked = kb.find((b) => b.callback_data === 'o:sasx:5:1:0:tg-a');
+  assert.match(marked.text, /✅/, 'current group is marked');
+});
+
+test('studentTrainingPicker: alerts when there are no training groups', async () => {
+  const store = offlineStorage({ getOfflineTrainingGroups: async () => [] });
+  const { studentTrainingPicker } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sassign:5:1:0', '5', '1', '0'] });
+  await studentTrainingPicker(ctx);
+  assert.equal(calls.editMessageText.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.offline.noTrainingGroupsToAssign);
+});
+
+test('assignStudentTraining: assigns the picked group and returns to the menu', async () => {
+  let assignedWith = null;
+  const store = offlineStorage({
+    getOfflineTrainingGroups: async () => SAMPLE_TG,
+    setOfflineStudentTrainingGroup: async (gid, ln, id) => { assignedWith = { gid, ln, id }; return { ok: true, name: 'مريم' }; },
+  });
+  const { assignStudentTraining } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sasx:5:1:0:tg-b', '5', '1', '0', 'tg-b'] });
+  await assignStudentTraining(ctx);
+  assert.deepEqual(assignedWith, { gid: 'offline:999:abc', ln: '1', id: 'tg-b' });
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('unassignStudentTraining: clears the assignment', async () => {
+  let clearedWith = null;
+  const store = offlineStorage({
+    getOfflineTrainingGroups: async () => SAMPLE_TG,
+    setOfflineStudentTrainingGroup: async (gid, ln, id) => { clearedWith = { gid, ln, id }; return { ok: true, name: 'مريم' }; },
+  });
+  const { unassignStudentTraining } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sunx:5:1:0', '5', '1', '0'] });
+  await unassignStudentTraining(ctx);
+  assert.deepEqual(clearedWith, { gid: 'offline:999:abc', ln: '1', id: null });
+  assert.equal(calls.editMessageText.length, 1);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.offline.studentTrainingUnassigned);
+});
