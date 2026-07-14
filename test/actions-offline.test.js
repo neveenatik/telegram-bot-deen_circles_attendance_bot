@@ -13,7 +13,20 @@ function offlineStorage(overrides = {}) {
       String(rowId) === '5'
         ? { groupId: 'offline:999:abc', name: 'صف الفجر', ownerUserId: String(OWNER), rowId: 5 }
         : null,
+    // Owner resolves with role 'owner'; anyone else is unauthorized unless a test
+    // overrides this to model a delegate (operator/assistant).
+    resolveManageableClass: async (rowId, userId) => {
+      if (String(rowId) !== '5') return null;
+      const base = { groupId: 'offline:999:abc', name: 'صف الفجر', ownerUserId: String(OWNER), rowId: 5 };
+      if (String(userId) === String(OWNER)) return { ...base, role: 'owner' };
+      return null;
+    },
     listOfflineClasses: async () => [{ groupId: 'offline:999:abc', name: 'صف الفجر', rowId: 5 }],
+    listSharedClasses: async () => [],
+    listClassManagers: async () => [],
+    addClassManager: async () => ({ ok: true, role: 'operator' }),
+    setClassManagerRole: async () => ({ ok: true, role: 'operator' }),
+    removeClassManager: async () => ({ ok: true }),
     getMaster: async () => ({ members: [
       { userId: 'offline:u1', name: 'مريم', listNumber: 1 },
       { userId: 'offline:u2', name: 'خديجة', listNumber: 2 },
@@ -37,7 +50,7 @@ test('classHome: non-owner is rejected', async () => {
   const { classHome } = handlers(offlineStorage());
   const { ctx, calls } = makeCtx({ userId: 111, match: ['o:cls:5', '5'] });
   await classHome(ctx);
-  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.offline.notFound]]);
   assert.equal(calls.editMessageText.length, 0);
 });
 
@@ -211,4 +224,195 @@ test('entry: renders the class list in a private chat', async () => {
   await entry(ctx);
   assert.equal(calls.reply.length, 1);
   assert.match(calls.reply[0][0], /صفوفي|صف الفجر/);
+});
+
+// ── Delegation (co-managers) ─────────────────────────────────────────────────
+
+const DELEGATE = 111;
+
+// Resolve DELEGATE with the given role; OWNER stays owner; others unauthorized.
+function withRole(role, overrides = {}) {
+  return offlineStorage({
+    resolveManageableClass: async (rowId, userId) => {
+      if (String(rowId) !== '5') return null;
+      const base = { groupId: 'offline:999:abc', name: 'صف الفجر', ownerUserId: String(OWNER), rowId: 5 };
+      if (String(userId) === String(OWNER)) return { ...base, role: 'owner' };
+      if (String(userId) === String(DELEGATE)) return { ...base, role };
+      return null;
+    },
+    ...overrides,
+  });
+}
+
+function classHomeData(calls) {
+  return calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+}
+
+test('classHome: owner sees rename + managers buttons', async () => {
+  const { classHome } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:cls:5', '5'] });
+  await classHome(ctx);
+  const data = classHomeData(calls);
+  assert.ok(data.includes('o:crename:5'));
+  assert.ok(data.includes('o:mgrs:5'));
+  assert.ok(data.includes('o:roster:5:0'));
+});
+
+test('classHome: operator hides rename + managers, keeps operational buttons', async () => {
+  const { classHome } = handlers(withRole('operator'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:cls:5', '5'] });
+  await classHome(ctx);
+  const data = classHomeData(calls);
+  assert.ok(!data.includes('o:crename:5'));
+  assert.ok(!data.includes('o:mgrs:5'));
+  assert.ok(data.includes('o:roster:5:0'));
+  assert.ok(data.includes('o:newsess:5'));
+  assert.ok(data.includes('o:teach:5'));
+});
+
+test('classHome: assistant sees only sessions + report', async () => {
+  const { classHome } = handlers(withRole('assistant'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:cls:5', '5'] });
+  await classHome(ctx);
+  const data = classHomeData(calls);
+  assert.ok(data.includes('o:sessions:5'));
+  assert.ok(data.includes('o:rep:5:1'));
+  assert.ok(!data.includes('o:roster:5:0'));
+  assert.ok(!data.includes('o:teach:5'));
+  assert.ok(!data.includes('o:newsess:5'));
+  assert.ok(!data.includes('o:crename:5'));
+  assert.ok(!data.includes('o:mgrs:5'));
+});
+
+test('roster: assistant is denied', async () => {
+  const { roster } = handlers(withRole('assistant'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:roster:5:0', '5', '0'] });
+  await roster(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
+});
+
+test('roster: operator is allowed', async () => {
+  const { roster } = handlers(withRole('operator'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:roster:5:0', '5', '0'] });
+  await roster(ctx);
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('sessionTypesMenu: hides New Session button for assistant', async () => {
+  const store = withRole('assistant', { getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionTypesMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:sessions:5', '5'] });
+  await sessionTypesMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(!data.includes('o:newsess:5'));
+  assert.ok(data.includes('o:stype:5:main:0'));
+});
+
+test('sessionMenu: hides assign-teacher button for assistant', async () => {
+  const store = withRole('assistant', { getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:smenu:5:1:1', '5', '1', '1'] });
+  await sessionMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(!data.some((d) => /^o:asgm:/.test(d)));
+  assert.ok(data.includes('o:session:5:1:1:0')); // attendance editor still available
+  assert.ok(data.includes('o:report:5:1:1'));
+});
+
+test('createSession: assistant is denied', async () => {
+  const { createSession } = handlers(withRole('assistant'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mksess:5:main', '5', 'main'] });
+  await createSession(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+});
+
+test('managersMenu: owner lists managers with add button', async () => {
+  const store = offlineStorage({
+    listClassManagers: async () => [
+      { userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' },
+      { userId: '222', role: 'assistant', displayName: null, addedBy: '999' },
+    ],
+  });
+  const { managersMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgrs:5', '5'] });
+  await managersMenu(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:mgr:5:111'));
+  assert.ok(data.includes('o:mgr:5:222'));
+  assert.ok(data.includes('o:mgradd:5'));
+  const labels = kb.flat().map((b) => b.text).join(' ');
+  assert.match(labels, /هدى/);
+  assert.match(labels, /#222/); // fallback to id when no display name
+});
+
+test('managersMenu: operator (non-owner) is denied', async () => {
+  const { managersMenu } = handlers(withRole('operator'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mgrs:5', '5'] });
+  await managersMenu(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
+});
+
+test('addManagerPrompt: stores the chosen role in the reply prompt', async () => {
+  let record = null;
+  const store = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { record = rec; } });
+  const { addManagerPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:mgrrole:5:assistant', '5', 'assistant'] });
+  await addManagerPrompt(ctx);
+  assert.equal(record.action, 'offlineAddManager');
+  assert.equal(record.role, 'assistant');
+  assert.equal(String(record.gref), '5');
+});
+
+test('setManagerRole: changes the role and refreshes the manager menu', async () => {
+  let changed = null;
+  const store = offlineStorage({
+    setClassManagerRole: async (gref, uid, role) => { changed = { gref, uid, role }; return { ok: true, role }; },
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { setManagerRole } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgrset:5:111:operator', '5', '111', 'operator'] });
+  await setManagerRole(ctx);
+  assert.deepEqual(changed, { gref: 5, uid: '111', role: 'operator' });
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('removeManager: removes the delegate and refreshes the list', async () => {
+  let removed = null;
+  const store = offlineStorage({
+    removeClassManager: async (gref, uid) => { removed = { gref, uid }; return { ok: true }; },
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { removeManager } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgrrmx:5:111', '5', '111'] });
+  await removeManager(ctx);
+  assert.deepEqual(removed, { gref: 5, uid: '111' });
+  assert.equal(calls.editMessageText.length, 1);
+});
+
+test('entry: shows the mine/shared chooser when the user owns and is shared classes', async () => {
+  const store = offlineStorage({
+    listSharedClasses: async () => [{ groupId: 'offline:888:x', name: 'صف الضحى', rowId: 9, role: 'operator' }],
+  });
+  const { entry } = handlers(store);
+  const { ctx, calls } = makeCtx({ chatType: 'private', userId: OWNER, text: '/offline' });
+  await entry(ctx);
+  const data = calls.reply[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:mine'));
+  assert.ok(data.includes('o:shared'));
+});
+
+test('sharedClasses: lists classes shared with the delegate', async () => {
+  const store = offlineStorage({
+    listSharedClasses: async () => [{ groupId: 'offline:888:x', name: 'صف الضحى', rowId: 9, role: 'assistant' }],
+  });
+  const { sharedClasses } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:shared'] });
+  await sharedClasses(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:cls:9'));
+  assert.ok(!data.includes('o:new')); // delegates cannot create classes
 });

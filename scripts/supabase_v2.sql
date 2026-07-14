@@ -83,6 +83,26 @@ create unique index if not exists uq_teachers_group_name_active
   on teachers (group_id, name)
   where active = true;
 
+-- Delegation for offline classes: an owner (groups.owner_user_id) can share a
+-- class with other users, each with a per-person role, so they can help manage
+-- it from their own DMs. Rows are scoped to a class and cascade on class delete.
+--   operator  = full operational access EXCEPT rename/delete class + managers.
+--   assistant = attendance editing in existing sessions + reports only.
+create table if not exists class_managers (
+  group_id bigint not null references groups(id) on delete cascade,
+  user_id text not null,
+  manager_role text not null default 'operator',
+  display_name text,
+  added_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (group_id, user_id),
+  check (manager_role in ('operator', 'assistant'))
+);
+
+create index if not exists idx_class_managers_user_id
+  on class_managers (user_id);
+
 -- Pending registration queue from /myid
 create table if not exists pending_registrations (
   id bigserial primary key,
@@ -270,6 +290,11 @@ for each row execute function touch_updated_at();
 drop trigger if exists trg_teachers_updated_at on teachers;
 create trigger trg_teachers_updated_at
 before update on teachers
+for each row execute function touch_updated_at();
+
+drop trigger if exists trg_class_managers_updated_at on class_managers;
+create trigger trg_class_managers_updated_at
+before update on class_managers
 for each row execute function touch_updated_at();
 
 drop trigger if exists trg_pending_registrations_updated_at on pending_registrations;
