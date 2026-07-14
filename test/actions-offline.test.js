@@ -495,6 +495,49 @@ test('manager menu offers a rename button', async () => {
   assert.ok(cbs.includes('o:mgrren:5:111'), 'rename button present');
 });
 
+test('manager menu offers an invite button', async () => {
+  const store = offlineStorage({
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { managerMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgr:5:111', '5', '111'] });
+  await managerMenu(ctx);
+  const cbs = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(cbs.includes('o:mgrinv:5:111'), 'invite button present');
+});
+
+test('inviteManager: replies with a forwardable deep-link invitation', async () => {
+  const store = offlineStorage({
+    listClassManagers: async () => [{ userId: '111', role: 'assistant', displayName: 'سارة', addedBy: '999' }],
+  });
+  const { inviteManager } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgrinv:5:111', '5', '111'] });
+  await inviteManager(ctx);
+  assert.equal(calls.reply.length, 1);
+  const text = calls.reply[0][0];
+  assert.match(text, /https:\/\/t\.me\/DeenCirclesBot\?start=offline/);
+  assert.match(text, /صف الفجر/); // class name is included
+  assert.match(text, /مساعِدة/); // her role label
+});
+
+test('inviteManager: operator can invite an assistant but not another operator', async () => {
+  const store = withRole('operator', {
+    listClassManagers: async () => [
+      { userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' },
+      { userId: '222', role: 'assistant', displayName: 'سارة', addedBy: '999' },
+    ],
+  });
+  const { inviteManager } = handlers(store);
+  const ok = makeCtx({ userId: DELEGATE, match: ['o:mgrinv:5:222', '5', '222'] });
+  await inviteManager(ok.ctx);
+  assert.equal(ok.calls.reply.length, 1);
+
+  const denied = makeCtx({ userId: DELEGATE, match: ['o:mgrinv:5:111', '5', '111'] });
+  await inviteManager(denied.ctx);
+  assert.deepEqual(denied.calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(denied.calls.reply.length, 0);
+});
+
 test('removeManager: removes the delegate and refreshes the list', async () => {
   let removed = null;
   const store = offlineStorage({
