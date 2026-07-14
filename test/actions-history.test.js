@@ -145,6 +145,81 @@ test('pick: userId token opens the status menu for the matching member', async (
   assert.ok(calls.editMessageText[0][0].includes('أحمد'));
 });
 
+// ── Delete session (shared by live history + offline) ────────────────────────
+function editorKb(calls) {
+  return calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+}
+
+test('session editor shows a delete button (live history)', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
+  const { session } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:session:123:2:1:0', '123', '2', '1', '0'] });
+
+  await session(ctx);
+
+  assert.ok(editorKb(calls).includes('h:sdel:123:2:1:0'), 'delete button present');
+});
+
+test('deleteSessionPrompt: shows a confirm step without deleting', async () => {
+  let called = false;
+  const storage = historyStorage({
+    getAllSessions: async () => [editorSession()],
+    deleteSession: async () => { called = true; return { ok: true }; },
+  });
+  const { deleteSessionPrompt } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:sdel:123:2:1:0', '123', '2', '1', '0'] });
+
+  await deleteSessionPrompt(ctx);
+
+  assert.equal(called, false, 'delete not performed at prompt stage');
+  const cbs = editorKb(calls);
+  assert.ok(cbs.includes('h:sdelx:123:2:1'), 'confirm button present');
+  assert.ok(cbs.includes('h:session:123:2:1:0'), 'cancel returns to editor');
+});
+
+test('deleteSessionConfirm: removes the picked session by id', async () => {
+  let deletedId = null;
+  const storage = historyStorage({
+    getAllSessions: async () => [editorSession()],
+    deleteSession: async (_g, id) => { deletedId = id; return { ok: true }; },
+  });
+  const { deleteSessionConfirm } = createHandlers({ storage });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:sdelx:123:2:1', '123', '2', '1'] });
+
+  await deleteSessionConfirm(ctx);
+
+  assert.equal(deletedId, 'sid-0');
+  assert.equal(calls.editMessageText.length, 1);
+  assert.equal(calls.answerCbQuery.length, 1);
+});
+
+test('deleteSessionConfirm: denied when caps.deleteSession is false (assistant)', async () => {
+  let called = false;
+  const storage = historyStorage({
+    getAllSessions: async () => [editorSession()],
+    deleteSession: async () => { called = true; return { ok: true }; },
+  });
+  const resolveContext = async () => ({ ok: true, groupId: '5', gref: '5', caps: { deleteSession: false } });
+  const { deleteSessionConfirm } = rawCreateHandlers({ storage, resolveContext, ns: 'o' });
+  const { ctx, calls } = makeCtx({ match: ['o:sdelx:5:2:1', '5', '2', '1'] });
+
+  await deleteSessionConfirm(ctx);
+
+  assert.equal(called, false);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+});
+
+test('session editor hides the delete button when caps.deleteSession is false', async () => {
+  const storage = historyStorage({ getAllSessions: async () => [editorSession()] });
+  const resolveContext = async () => ({ ok: true, groupId: '5', gref: '5', caps: { deleteSession: false } });
+  const { session } = rawCreateHandlers({ storage, resolveContext, ns: 'o' });
+  const { ctx, calls } = makeCtx({ match: ['o:session:5:2:1:0', '5', '2', '1', '0'] });
+
+  await session(ctx);
+
+  assert.ok(!editorKb(calls).some((c) => c && c.startsWith('o:sdel:')), 'no delete button for assistant');
+});
+
 // Recitation-correction (registeredSecondary) archived sessions expose per-member
 // verse editing on top of attendance status.
 function recitationSession() {

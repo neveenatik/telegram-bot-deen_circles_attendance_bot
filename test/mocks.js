@@ -128,6 +128,7 @@ export function makeStorage(overrides = {}) {
     getParentGroupId: async () => null,
     setParentGroup: async () => {},
     addMembers: async () => {},
+    deleteSession: async () => ({ ok: true }),
     ...overrides,
   };
 }
