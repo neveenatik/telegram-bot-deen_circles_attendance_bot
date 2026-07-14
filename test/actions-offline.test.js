@@ -137,6 +137,45 @@ test('createSession: seeds roster participants and saves the session', async () 
   assert.equal(calls.editMessageText.length, 1);
 });
 
+const MIXED_SESSIONS = [
+  { id: 'm1', seriesId: 1, type: 'main', name: 'حلقة أ', startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:00:00Z', participants: {} },
+  { id: 't1', seriesId: 1, type: 'training', name: 'تدريب أ', startedAt: '2026-01-02T00:00:00Z', endedAt: '2026-01-02T00:00:00Z', participants: {} },
+  { id: 'm2', seriesId: 1, type: 'main', name: 'حلقة ب', startedAt: '2026-01-03T00:00:00Z', endedAt: '2026-01-03T00:00:00Z', participants: {} },
+];
+
+test('sessionTypesMenu: shows a type chooser with per-type counts', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionTypesMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sessions:5', '5'] });
+  await sessionTypesMenu(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:stype:5:main:0'));
+  assert.ok(data.includes('o:stype:5:training:0'));
+  const mainLabel = kb.flat().find((b) => b.callback_data === 'o:stype:5:main:0').text;
+  assert.match(mainLabel, /2/);
+});
+
+test('sessionsByType: lists only the type, preserving absolute record index', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionsByType } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:stype:5:main:0', '5', 'main', '0'] });
+  await sessionsByType(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const sessionButtons = kb.flat().filter((b) => /^o:smenu:/.test(b.callback_data));
+  assert.equal(sessionButtons.length, 2);
+  assert.deepEqual(sessionButtons.map((b) => b.callback_data), ['o:smenu:5:1:1', 'o:smenu:5:1:3']);
+});
+
+test('sessionMenu: back button returns to the session type list', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:smenu:5:1:3', '5', '1', '3'] });
+  await sessionMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:stype:5:main:0'));
+});
+
 test('assignTeacher: assigns the picked teacher to the session', async () => {
   let assigned = null;
   const store = offlineStorage({
