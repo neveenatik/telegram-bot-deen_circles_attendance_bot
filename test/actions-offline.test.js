@@ -258,13 +258,14 @@ test('classHome: owner sees rename + managers buttons', async () => {
   assert.ok(data.includes('o:roster:5:0'));
 });
 
-test('classHome: operator hides rename + managers, keeps operational buttons', async () => {
+test('classHome: operator hides rename but shows managers + clone', async () => {
   const { classHome } = handlers(withRole('operator'));
   const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:cls:5', '5'] });
   await classHome(ctx);
   const data = classHomeData(calls);
-  assert.ok(!data.includes('o:crename:5'));
-  assert.ok(!data.includes('o:mgrs:5'));
+  assert.ok(!data.includes('o:crename:5')); // renaming the class stays owner-only
+  assert.ok(data.includes('o:mgrs:5')); // operators manage assistants
+  assert.ok(data.includes('o:clone:5')); // operators may clone a shared class
   assert.ok(data.includes('o:roster:5:0'));
   assert.ok(data.includes('o:newsess:5'));
   assert.ok(data.includes('o:teach:5'));
@@ -347,12 +348,21 @@ test('managersMenu: owner lists managers with add button', async () => {
   assert.match(labels, /#222/); // fallback to id when no display name
 });
 
-test('managersMenu: operator (non-owner) is denied', async () => {
-  const { managersMenu } = handlers(withRole('operator'));
+test('managersMenu: operator sees only assistants (not other operators)', async () => {
+  const store = withRole('operator', {
+    listClassManagers: async () => [
+      { userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' },
+      { userId: '222', role: 'assistant', displayName: 'سارة', addedBy: '999' },
+    ],
+  });
+  const { managersMenu } = handlers(store);
   const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mgrs:5', '5'] });
   await managersMenu(ctx);
-  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
-  assert.equal(calls.editMessageText.length, 0);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(!data.includes('o:mgr:5:111')); // other operators are hidden
+  assert.ok(data.includes('o:mgr:5:222')); // assistants are manageable
+  assert.ok(data.includes('o:mgradd:5'));
 });
 
 test('addManagerPrompt: stores the chosen role in the reply prompt', async () => {
@@ -415,6 +425,85 @@ test('removeManager: removes the delegate and refreshes the list', async () => {
   await removeManager(ctx);
   assert.deepEqual(removed, { gref: 5, uid: '111' });
   assert.equal(calls.editMessageText.length, 1);
+});
+
+test('addManagerRoleMenu: operator skips the role picker and prompts for an assistant', async () => {
+  let record = null;
+  const store = withRole('operator', { setReplyPrompt: async (_c, _m, rec) => { record = rec; } });
+  const { addManagerRoleMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mgradd:5', '5'] });
+  await addManagerRoleMenu(ctx);
+  // No role-picker menu was shown; instead a force-reply prompt was opened.
+  assert.equal(calls.editMessageText.length, 0);
+  assert.equal(record.action, 'offlineAddManager');
+  assert.equal(record.role, 'assistant');
+});
+
+test('addManagerPrompt: forces the assistant role for a non-owner operator', async () => {
+  let record = null;
+  const store = withRole('operator', { setReplyPrompt: async (_c, _m, rec) => { record = rec; } });
+  const { addManagerPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: DELEGATE, match: ['o:mgrrole:5:operator', '5', 'operator'] });
+  await addManagerPrompt(ctx);
+  assert.equal(record.role, 'assistant'); // operator cannot create another operator
+});
+
+test('managerMenu: operator does not see the role-toggle (promote) button', async () => {
+  const store = withRole('operator', {
+    listClassManagers: async () => [{ userId: '222', role: 'assistant', displayName: 'سارة', addedBy: '999' }],
+  });
+  const { managerMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mgr:5:222', '5', '222'] });
+  await managerMenu(ctx);
+  const cbs = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(!cbs.some((d) => /^o:mgrset:/.test(d)), 'no role change for operators');
+  assert.ok(cbs.includes('o:mgrren:5:222'), 'can still rename the assistant');
+  assert.ok(cbs.includes('o:mgrrm:5:222'), 'can still remove the assistant');
+});
+
+test('managerMenu: operator cannot open another operator', async () => {
+  const store = withRole('operator', {
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { managerMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:mgr:5:111', '5', '111'] });
+  await managerMenu(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
+});
+
+test('cloneClass: operator copies a shared class into her own', async () => {
+  let cloned = null;
+  const store = withRole('operator', {
+    cloneOfflineClass: async (rowId, ownerUserId) => {
+      cloned = { rowId, ownerUserId };
+      return { ok: true, rowId: 77, groupId: 'offline:111:new', name: 'صف الفجر (نسخة)', students: 2, teachers: 1 };
+    },
+  });
+  const { cloneClass } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:clone:5', '5'] });
+  await cloneClass(ctx);
+  assert.deepEqual(cloned, { rowId: 5, ownerUserId: DELEGATE });
+  assert.equal(calls.editMessageText.length, 1);
+  // Navigates to the newly owned class home (owner buttons for row 77).
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:crename:77'));
+});
+
+test('cloneClass: owner is denied (nothing to clone)', async () => {
+  const { cloneClass } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:clone:5', '5'] });
+  await cloneClass(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
+});
+
+test('cloneClass: assistant is denied', async () => {
+  const { cloneClass } = handlers(withRole('assistant'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:clone:5', '5'] });
+  await cloneClass(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
 });
 
 test('entry: shows the mine/shared chooser when the user owns and is shared classes', async () => {
