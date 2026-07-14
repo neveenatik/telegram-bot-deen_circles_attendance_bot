@@ -379,6 +379,31 @@ test('setManagerRole: changes the role and refreshes the manager menu', async ()
   assert.equal(calls.editMessageText.length, 1);
 });
 
+test('renameManagerPrompt: opens a force-reply awaiting the new name', async () => {
+  let record = null;
+  const store = offlineStorage({
+    setReplyPrompt: async (_c, _m, rec) => { record = rec; },
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { renameManagerPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:mgrren:5:111', '5', '111'] });
+  await renameManagerPrompt(ctx);
+  assert.equal(record.action, 'offlineRenameManager');
+  assert.equal(record.uid, '111');
+  assert.equal(String(record.gref), '5');
+});
+
+test('manager menu offers a rename button', async () => {
+  const store = offlineStorage({
+    listClassManagers: async () => [{ userId: '111', role: 'operator', displayName: 'هدى', addedBy: '999' }],
+  });
+  const { managerMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mgr:5:111', '5', '111'] });
+  await managerMenu(ctx);
+  const cbs = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(cbs.includes('o:mgrren:5:111'), 'rename button present');
+});
+
 test('removeManager: removes the delegate and refreshes the list', async () => {
   let removed = null;
   const store = offlineStorage({

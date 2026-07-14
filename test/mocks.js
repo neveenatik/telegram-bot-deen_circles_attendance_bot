@@ -36,6 +36,7 @@ export function makeTelegram(overrides = {}) {
     unpinChatMessage(...a) { calls.unpinChatMessage.push(a); return Promise.resolve(true); },
     answerCbQuery(...a) { calls.answerCbQuery.push(a); return Promise.resolve(true); },
     getChatMember(...a) { calls.getChatMember.push(a); return Promise.resolve({ status: 'administrator' }); },
+    getChat(...a) { (calls.getChat || (calls.getChat = [])).push(a); return Promise.resolve({ id: Number(a[0]) || 0, first_name: 'مدير', type: 'private' }); },
     getMe() { return Promise.resolve({ id: 42, is_bot: true, username: 'DeenCirclesBot', first_name: 'Deen Circles' }); },
     ...overrides,
   };
@@ -129,6 +130,7 @@ export function makeStorage(overrides = {}) {
     setParentGroup: async () => {},
     addMembers: async () => {},
     deleteSession: async () => ({ ok: true }),
+    touchClassManagerName: async () => ({ ok: true }),
     ...overrides,
   };
 }
