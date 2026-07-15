@@ -16,6 +16,7 @@ function ttStorage(overrides = {}) {
     getScheduleSlot: async (_g, id) => ({ id: Number(id), sessionType: 'main', dayOfWeek: 0, timeOfDay: '17:30', teacherId: null, teacherName: null, teacherType: null }),
     addScheduleSlot: async () => 9,
     setScheduleSlotTeacher: async () => {},
+    updateScheduleSlot: async () => {},
     removeScheduleSlot: async () => {},
     listScheduleForUser: async () => [],
     getTeachers: async () => [],
@@ -262,6 +263,85 @@ test('slotMenu: owner sees assign-teacher and remove', async () => {
   const data = editData(calls);
   assert.ok(data.includes('o:ttasg:5:1'));
   assert.ok(data.includes('o:ttrm:5:1'));
+  assert.ok(data.includes('o:tted:5:1')); // change day
+  assert.ok(data.includes('o:ttet:5:1')); // change time (timed slot)
+});
+
+test('slotMenu: an all-day slot offers change-day but not change-time', async () => {
+  const allDaySlot = { id: 3, sessionType: 'homeworkReview', dayOfWeek: 1, timeOfDay: 'allday', teacherId: null, teacherName: null, teacherTypes: null };
+  const store = ttStorage({ getScheduleSlot: async () => allDaySlot });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttslot:5:3', '5', '3'] });
+  await handlers(store).slotMenu(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:tted:5:3')); // change day
+  assert.ok(!data.includes('o:ttet:5:3')); // no change-time for all-day
+});
+
+test('editDay: shows a day picker for the slot', async () => {
+  const store = ttStorage({ getScheduleSlot: async () => SLOTS[0] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tted:5:1', '5', '1'] });
+  await handlers(store).editDay(ctx);
+  const data = editData(calls);
+  assert.ok(data.some((c) => /^o:ttsd:5:1:\d$/.test(c)));
+});
+
+test('editSetDay: updates the weekday and returns to the slot menu', async () => {
+  const updates = [];
+  const store = ttStorage({
+    getScheduleSlot: async () => SLOTS[0],
+    updateScheduleSlot: async (g, id, patch) => { updates.push([g, id, patch]); },
+  });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttsd:5:1:4', '5', '1', '4'] });
+  await handlers(store).editSetDay(ctx);
+  assert.deepEqual(updates[0], ['offline:o:1', '1', { dayOfWeek: 4 }]);
+  assert.equal(calls.answerCbQuery[0][0], TT.slotUpdated);
+});
+
+test('editPromptTime: stores a timetableEditTime reply prompt (timed slot)', async () => {
+  const prompts = [];
+  const store = ttStorage({
+    getScheduleSlot: async () => SLOTS[0],
+    setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); },
+  });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttet:5:1', '5', '1'] });
+  await handlers(store).editPromptTime(ctx);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'timetableEditTime');
+  assert.equal(prompts[0].slotId, '1');
+});
+
+test('editPromptTime: refuses an all-day slot (no time to edit)', async () => {
+  const prompts = [];
+  const allDaySlot = { id: 3, sessionType: 'homeworkReview', dayOfWeek: 1, timeOfDay: 'allday', teacherId: null, teacherName: null, teacherTypes: null };
+  const store = ttStorage({
+    getScheduleSlot: async () => allDaySlot,
+    setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); },
+  });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttet:5:3', '5', '3'] });
+  await handlers(store).editPromptTime(ctx);
+  assert.equal(prompts.length, 0);
+});
+
+test('onMessage: an edit-time reply updates the slot and refreshes the menu', async () => {
+  const updates = [];
+  const store = ttStorage({
+    getReplyPrompt: async () => ({ action: 'timetableEditTime', groupId: 'offline:o:1', gref: '5', slotId: '1', chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    getScheduleSlot: async () => SLOTS[0],
+    updateScheduleSlot: async (g, id, patch) => { updates.push([g, id, patch]); },
+  });
+  const telegram = makeTelegram();
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER },
+    message: { message_id: 601, text: '8:15', reply_to_message: { message_id: 600 } },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 602 }); },
+  };
+  await handlers(store).onMessage(ctx, async () => {});
+  assert.deepEqual(updates[0], ['offline:o:1', '1', { timeOfDay: '08:15' }]);
+  assert.equal(telegram.calls.editMessageText.length, 1);
 });
 
 test('assignTeacher: sets the teacher and returns to the slot menu', async () => {

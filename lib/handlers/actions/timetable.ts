@@ -198,6 +198,7 @@ interface Storage {
   getScheduleSlot(groupId: string, slotId: string): Promise<Slot | null>;
   addScheduleSlot(groupId: string, slot: { sessionType: string; dayOfWeek: number; timeOfDay: string; teacherId: number | null }): Promise<number | null>;
   setScheduleSlotTeacher(groupId: string, slotId: string, teacherId: number | null): Promise<void>;
+  updateScheduleSlot(groupId: string, slotId: string, patch: { dayOfWeek?: number; timeOfDay?: string }): Promise<void>;
   removeScheduleSlot(groupId: string, slotId: string): Promise<void>;
   listScheduleForUser(userId: number | string): Promise<UserSlot[]>;
   getTeachers(groupId: string): Promise<Teacher[]>;
@@ -419,12 +420,30 @@ function slotMenuView(cls: ManageableClass, slot: Slot, canEdit: boolean) {
   const g = cls.rowId;
   const rows = [];
   if (canEdit) {
+    rows.push([Markup.button.callback(TT.editDayButton, `o:tted:${g}:${slot.id}`)]);
+    if (!isAllDaySlot(slot.timeOfDay)) {
+      rows.push([Markup.button.callback(TT.editTimeButton, `o:ttet:${g}:${slot.id}`)]);
+    }
     rows.push([Markup.button.callback(TT.assignTeacherButton, `o:ttasg:${g}:${slot.id}`)]);
     rows.push([Markup.button.callback(TT.removeButton, `o:ttrm:${g}:${slot.id}`)]);
   }
   rows.push([Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]);
   const text = TT.slotMenuTitle(dayLabel(slot.dayOfWeek), timeDisplay(slot.timeOfDay), typeLabel(slot.sessionType), slot.teacherName);
   return { text, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Day picker for editing an existing slot's weekday (two per row).
+function editDayView(cls: ManageableClass, slot: Slot) {
+  const g = cls.rowId;
+  const rows = [];
+  for (let d = 0; d < 7; d += 2) {
+    const mark = (n: number) => (n === slot.dayOfWeek ? '✅ ' : '');
+    const row = [Markup.button.callback(`${mark(d)}${dayLabel(d)}`, `o:ttsd:${g}:${slot.id}:${d}`)];
+    if (d + 1 < 7) row.push(Markup.button.callback(`${mark(d + 1)}${dayLabel(d + 1)}`, `o:ttsd:${g}:${slot.id}:${d + 1}`));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, `o:ttslot:${g}:${slot.id}`), ...dismissRow()]);
+  return { text: TT.editDayTitle, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 function teacherPickerView(cls: ManageableClass, slot: Slot, teachers: Teacher[]) {
@@ -595,6 +614,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
     getScheduleSlot,
     addScheduleSlot,
     setScheduleSlotTeacher,
+    updateScheduleSlot,
     removeScheduleSlot,
     listScheduleForUser,
     getTeachers,
@@ -883,6 +903,50 @@ export function createHandlers({ storage }: { storage: Storage }) {
     await ctx.answerCbQuery(teacherId ? TT.teacherAssigned : TT.teacherCleared);
   }
 
+  // Edit an existing slot's weekday: show a day picker.
+  async function editDay(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const slotId = readMatch(ctx)[2] ?? '';
+    const slot = await getScheduleSlot(cls.groupId, slotId);
+    if (!slot) { await ctx.answerCbQuery(TT.missing); return; }
+    const view = editDayView(cls, slot);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // Apply the new weekday and return to the (updated) slot menu.
+  async function editSetDay(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const slotId = m[2] ?? '';
+    const day = Number(m[3] ?? NaN);
+    if (!Number.isInteger(day) || day < 0 || day > 6) { await ctx.answerCbQuery(TT.missing); return; }
+    const slot = await getScheduleSlot(cls.groupId, slotId);
+    if (!slot) { await ctx.answerCbQuery(TT.missing); return; }
+    await updateScheduleSlot(cls.groupId, slotId, { dayOfWeek: day });
+    const updated = await getScheduleSlot(cls.groupId, slotId);
+    const view = slotMenuView(cls, updated ?? slot, canManage(cls.role));
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery(TT.slotUpdated);
+  }
+
+  // Edit an existing slot's time: force-reply for a new HH:MM (captured by onMessage).
+  async function editPromptTime(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const slotId = readMatch(ctx)[2] ?? '';
+    const slot = await getScheduleSlot(cls.groupId, slotId);
+    if (!slot || isAllDaySlot(slot.timeOfDay)) { await ctx.answerCbQuery(TT.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'timetableEditTime', gref: String(cls.rowId), slotId: String(slotId) },
+      sendPrompt: () => ctx.reply(TT.timePrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
   async function removeConfirm(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
@@ -927,7 +991,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const chatKey = String(ctx.chat.id);
     const pending = await getReplyPrompt(chatKey, replyTo.message_id);
     if (!pending || !pending.groupId) return next();
-    if (pending.action !== 'timetableTime' && pending.action !== 'timetableBulk') return next();
+    if (pending.action !== 'timetableTime' && pending.action !== 'timetableBulk'
+      && pending.action !== 'timetableEditTime') return next();
 
     // Refresh the originating panel to the (now longer) list.
     const refreshPanel = async (): Promise<void> => {
@@ -945,6 +1010,37 @@ export function createHandlers({ storage }: { storage: Storage }) {
         logTelegramError('timetable.add.refreshPanel', err, { chatId: chatKey, messageId: pending.msgId });
       }
     };
+
+    // Refresh the originating slot menu to its (edited) state.
+    const refreshSlotMenu = async (slotId: string): Promise<void> => {
+      if (pending.chatId === undefined || pending.msgId === undefined) return;
+      const cls = await resolveManageableClass(String(pending.gref ?? ''), ctx.from?.id ?? '');
+      if (!cls) return;
+      const slot = await getScheduleSlot(cls.groupId, slotId);
+      if (!slot) return;
+      const view = slotMenuView(cls, slot, canManage(cls.role));
+      try {
+        await ctx.telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
+          parse_mode: 'Markdown', ...view.keyboard,
+        });
+      } catch (err) {
+        logTelegramError('timetable.edit.refreshSlotMenu', err, { chatId: chatKey, messageId: pending.msgId });
+      }
+    };
+
+    if (pending.action === 'timetableEditTime') {
+      const editedTime = normalizeTime(msg.text ?? '');
+      if (!editedTime) {
+        // Keep the prompt open so she can retype a valid time.
+        await replyEphemeral(ctx, TT.timeInvalid);
+        return;
+      }
+      await delReplyPrompt(chatKey, replyTo.message_id);
+      await updateScheduleSlot(pending.groupId, String(pending.slotId ?? ''), { timeOfDay: editedTime });
+      await replyEphemeral(ctx, TT.slotUpdated);
+      await refreshSlotMenu(String(pending.slotId ?? ''));
+      return;
+    }
 
     if (pending.action === 'timetableBulk') {
       const allDay = isAllDayType(String(pending.sessionType));
@@ -1021,6 +1117,9 @@ export function createHandlers({ storage }: { storage: Storage }) {
     slotMenu,
     assignTeacherMenu,
     assignTeacher,
+    editDay,
+    editSetDay,
+    editPromptTime,
     removeConfirm,
     removeExec,
     myWeek,
@@ -1052,6 +1151,9 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:ttslot:(\d+):(\d+)$/, h.slotMenu);
   bot.action(/^o:ttasg:(\d+):(\d+)$/, h.assignTeacherMenu);
   bot.action(/^o:ttasgd:(\d+):(\d+):(\d+)$/, h.assignTeacher);
+  bot.action(/^o:tted:(\d+):(\d+)$/, h.editDay);
+  bot.action(/^o:ttsd:(\d+):(\d+):([0-6])$/, h.editSetDay);
+  bot.action(/^o:ttet:(\d+):(\d+)$/, h.editPromptTime);
   bot.action(/^o:ttrm:(\d+):(\d+)$/, h.removeConfirm);
   bot.action(/^o:ttrmx:(\d+):(\d+)$/, h.removeExec);
 }
