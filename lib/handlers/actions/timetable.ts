@@ -20,6 +20,14 @@ const TT = TEXT.timetable;
 // Session types a slot may schedule (mirrors OFFLINE_SESSION_TYPES in offline.js).
 const SCHEDULE_TYPES = ['main', 'registeredSecondary', 'training'];
 
+// Curated timezone list (TEXT.timetable.timezones); first entry is the default.
+const TIMEZONES = TT.timezones as { id: string; label: string }[];
+
+// Human label for an IANA zone; falls back to the raw id for unknown zones.
+function tzLabel(tz: string): string {
+  return TIMEZONES.find((z) => z.id === tz)?.label ?? tz;
+}
+
 interface Slot {
   id: number;
   sessionType: string;
@@ -38,6 +46,7 @@ interface UserSlot {
   dayOfWeek: number;
   timeOfDay: string;
   teacherName: string | null;
+  timezone: string;
 }
 
 interface Teacher {
@@ -76,6 +85,8 @@ interface Storage {
   removeScheduleSlot(groupId: string, slotId: string): Promise<void>;
   listScheduleForUser(userId: number | string): Promise<UserSlot[]>;
   getTeachers(groupId: string): Promise<Teacher[]>;
+  getClassTimezone(groupId: string): Promise<string>;
+  setClassTimezone(groupId: string, timezone: string): Promise<void>;
 }
 
 type Handler = (ctx: Context, next: () => Promise<void>) => unknown;
@@ -126,18 +137,44 @@ function canManage(role: string): boolean {
 
 // ── Renderers ────────────────────────────────────────────────────────────────
 
-function panelView(cls: ManageableClass, slots: Slot[], canEdit: boolean) {
+function panelView(cls: ManageableClass, slots: Slot[], timezone: string, canEdit: boolean) {
   const g = cls.rowId;
   const rows = slots.map((s) => [Markup.button.callback(
     clampButtonLabel(TT.slotRow(dayLabel(s.dayOfWeek), s.timeOfDay, typeLabel(s.sessionType), s.teacherName)),
     `o:ttslot:${g}:${s.id}`,
   )]);
   rows.push([Markup.button.callback(TT.weekViewButton, `o:ttweek:${g}`)]);
-  if (canEdit) rows.push([Markup.button.callback(TT.addButton, `o:ttadd:${g}`)]);
+  if (canEdit) {
+    rows.push([Markup.button.callback(TT.addButton, `o:ttadd:${g}`)]);
+    rows.push([Markup.button.callback(TT.tzButton, `o:tttz:${g}`)]);
+  }
   rows.push([Markup.button.callback(TEXT.backButton, `o:cls:${g}`), ...dismissRow()]);
   const hint = slots.length ? TT.panelHint : TT.empty;
-  return { text: `${TT.title(cls.name)}\n\n${hint}`, keyboard: Markup.inlineKeyboard(rows) };
+  const header = `${TT.title(cls.name)}\n${TT.tzHeader(tzLabel(timezone))}`;
+  return { text: `${header}\n\n${hint}`, keyboard: Markup.inlineKeyboard(rows) };
 }
+
+// Timezone picker (owner/operator). Two zones per row for a compact keyboard.
+function tzPickerView(cls: ManageableClass, current: string) {
+  const g = cls.rowId;
+  const rows = [];
+  for (let i = 0; i < TIMEZONES.length; i += 2) {
+    const a = TIMEZONES[i];
+    if (!a) continue;
+    const b = TIMEZONES[i + 1];
+    const row = [tzButtonFor(g, a, current)];
+    if (b) row.push(tzButtonFor(g, b, current));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]);
+  return { text: TT.tzPickTitle, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function tzButtonFor(g: string | number, zone: { id: string; label: string }, current: string) {
+  const mark = zone.id === current ? '✅ ' : '';
+  return Markup.button.callback(clampButtonLabel(`${mark}${zone.label}`), `o:tttzx:${g}:${zone.id}`);
+}
+
 
 function pickTypeView(cls: ManageableClass) {
   const g = cls.rowId;
@@ -215,11 +252,12 @@ function weekBody(slots: Slot[]): string {
   return blocks.join('\n\n');
 }
 
-function weekView(cls: ManageableClass, slots: Slot[]) {
+function weekView(cls: ManageableClass, slots: Slot[], timezone: string) {
   const g = cls.rowId;
   const body = slots.length ? weekBody(slots) : TT.weekEmpty;
   const rows = [[Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]];
-  return { text: `${TT.weekTitle(cls.name)}\n\n${body}`, keyboard: Markup.inlineKeyboard(rows) };
+  const header = `${TT.weekTitle(cls.name)}\n${TT.tzHeader(tzLabel(timezone))}`;
+  return { text: `${header}\n\n${body}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // Cross-class "my week": group by day, each line tagged with its class.
@@ -234,7 +272,7 @@ function myWeekBody(slots: UserSlot[]): string {
   for (let d = 0; d < 7; d += 1) {
     const list = byDay.get(d);
     if (!list || !list.length) continue;
-    const lines = list.map((s) => TT.myWeekSlotLine(s.timeOfDay, s.className, typeLabel(s.sessionType), s.teacherName));
+    const lines = list.map((s) => TT.myWeekSlotLineTz(s.timeOfDay, tzLabel(s.timezone), s.className, typeLabel(s.sessionType), s.teacherName));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
@@ -253,6 +291,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
     removeScheduleSlot,
     listScheduleForUser,
     getTeachers,
+    getClassTimezone,
+    setClassTimezone,
   } = storage;
 
   // Resolve the class for any role (viewing is open); returns null if unresolved.
@@ -267,7 +307,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const cls = await resolve(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const slots = await listScheduleSlots(cls.groupId);
-    const view = panelView(cls, slots, canManage(cls.role));
+    const timezone = await getClassTimezone(cls.groupId);
+    const view = panelView(cls, slots, timezone, canManage(cls.role));
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -276,9 +317,32 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const cls = await resolve(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const slots = await listScheduleSlots(cls.groupId);
-    const view = weekView(cls, slots);
+    const timezone = await getClassTimezone(cls.groupId);
+    const view = weekView(cls, slots, timezone);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  // Timezone picker + apply (owner/operator only).
+  async function tzPicker(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const current = await getClassTimezone(cls.groupId);
+    const view = tzPickerView(cls, current);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function tzApply(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const tz = readMatch(ctx)[2] ?? '';
+    if (!TIMEZONES.some((z) => z.id === tz)) { await ctx.answerCbQuery(TT.missing); return; }
+    await setClassTimezone(cls.groupId, tz);
+    const slots = await listScheduleSlots(cls.groupId);
+    const view = panelView(cls, slots, tz, canManage(cls.role));
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery(TT.tzUpdated);
   }
 
   async function addPickType(ctx: Context): Promise<void> {
@@ -370,7 +434,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const slotId = readMatch(ctx)[2] ?? '';
     await removeScheduleSlot(cls.groupId, slotId);
     const slots = await listScheduleSlots(cls.groupId);
-    const view = panelView(cls, slots, canManage(cls.role));
+    const timezone = await getClassTimezone(cls.groupId);
+    const view = panelView(cls, slots, timezone, canManage(cls.role));
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery(TT.removedToast);
   }
@@ -415,7 +480,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const cls = await resolveManageableClass(String(pending.gref ?? ''), ctx.from?.id ?? '');
     if (!cls) return;
     const slots = await listScheduleSlots(cls.groupId);
-    const view = panelView(cls, slots, canManage(cls.role));
+    const timezone = await getClassTimezone(cls.groupId);
+    const view = panelView(cls, slots, timezone, canManage(cls.role));
     try {
       await ctx.telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
         parse_mode: 'Markdown', ...view.keyboard,
@@ -428,6 +494,8 @@ export function createHandlers({ storage }: { storage: Storage }) {
   return {
     panel,
     week,
+    tzPicker,
+    tzApply,
     addPickType,
     addPickDay,
     addPromptTime,
@@ -447,6 +515,8 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.command('myweek', h.myWeek);
   bot.action(/^o:tt:(\d+)$/, h.panel);
   bot.action(/^o:ttweek:(\d+)$/, h.week);
+  bot.action(/^o:tttz:(\d+)$/, h.tzPicker);
+  bot.action(/^o:tttzx:(\d+):([A-Za-z]+(?:\/[A-Za-z_]+)+)$/, h.tzApply);
   bot.action(/^o:ttadd:(\d+)$/, h.addPickType);
   bot.action(/^o:ttaddt:(\d+):([a-zA-Z]+)$/, h.addPickDay);
   bot.action(/^o:ttaddd:(\d+):([a-zA-Z]+):(\d+)$/, h.addPromptTime);

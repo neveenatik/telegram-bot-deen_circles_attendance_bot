@@ -39,6 +39,8 @@ create table if not exists group_settings (
   -- this group, mirroring how training groups are linked.
   homework_group_id text,
   retention_days integer not null default 90,
+  -- IANA timezone the class's weekly timetable times are expressed in.
+  timezone text not null default 'Asia/Riyadh',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (retention_days > 0)

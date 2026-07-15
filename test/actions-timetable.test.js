@@ -19,6 +19,8 @@ function ttStorage(overrides = {}) {
     removeScheduleSlot: async () => {},
     listScheduleForUser: async () => [],
     getTeachers: async () => [],
+    getClassTimezone: async () => 'Asia/Riyadh',
+    setClassTimezone: async () => {},
     ...overrides,
   });
 }
@@ -190,8 +192,8 @@ test('week: groups slots by weekday with day headers', async () => {
 test('myWeek: aggregates every class the user manages', async () => {
   const store = ttStorage({
     listScheduleForUser: async () => [
-      { id: 1, groupId: 10, className: 'حلقة أ', sessionType: 'main', dayOfWeek: 0, timeOfDay: '17:30', teacherName: 'أمل' },
-      { id: 2, groupId: 20, className: 'حلقة ب', sessionType: 'training', dayOfWeek: 0, timeOfDay: '09:00', teacherName: null },
+      { id: 1, groupId: 10, className: 'حلقة أ', sessionType: 'main', dayOfWeek: 0, timeOfDay: '17:30', teacherName: 'أمل', timezone: 'Asia/Riyadh' },
+      { id: 2, groupId: 20, className: 'حلقة ب', sessionType: 'training', dayOfWeek: 0, timeOfDay: '09:00', teacherName: null, timezone: 'Africa/Cairo' },
     ],
   });
   const calls = { reply: [] };
@@ -208,4 +210,62 @@ test('myWeek: with no slots shows the empty message', async () => {
   const ctx = { chat: { id: 777, type: 'private' }, from: { id: OWNER }, reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 1 }); } };
   await handlers(store).myWeek(ctx);
   assert.match(calls.reply[0][0], /لا توجد مواعيد/);
+});
+
+// ── Timezone ─────────────────────────────────────────────────────────────────
+
+test('panel: owner sees the timezone button and current zone header', async () => {
+  const store = ttStorage({ getClassTimezone: async () => 'Africa/Cairo' });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tt:5', '5'] });
+  await handlers(store).panel(ctx);
+  assert.ok(editData(calls).includes('o:tttz:5'));
+  assert.match(calls.editMessageText[0][0], /القاهرة/);
+});
+
+test('panel: assistant does not see the timezone button', async () => {
+  const store = ttStorage({
+    resolveManageableClass: async (gref) => ({ groupId: 'offline:o:1', rowId: Number(gref), role: 'assistant', name: 'صف' }),
+  });
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:tt:5', '5'] });
+  await handlers(store).panel(ctx);
+  assert.ok(!editData(calls).includes('o:tttz:5'));
+});
+
+test('tzPicker: lists zones and marks the current one', async () => {
+  const store = ttStorage({ getClassTimezone: async () => 'Africa/Cairo' });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tttz:5', '5'] });
+  await handlers(store).tzPicker(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:tttzx:5:Asia/Riyadh'));
+  assert.ok(data.includes('o:tttzx:5:Africa/Cairo'));
+  const labels = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.text);
+  assert.ok(labels.some((l) => l.startsWith('✅') && /القاهرة/.test(l)));
+});
+
+test('tzApply: persists the chosen zone and returns to the panel', async () => {
+  let saved = null;
+  const store = ttStorage({ setClassTimezone: async (g, tz) => { saved = [g, tz]; } });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tttzx:5:Africa/Cairo', '5', 'Africa/Cairo'] });
+  await handlers(store).tzApply(ctx);
+  assert.deepEqual(saved, ['offline:o:1', 'Africa/Cairo']);
+  assert.equal(calls.answerCbQuery[0][0], TT.tzUpdated);
+  assert.ok(editData(calls).includes('o:ttadd:5'));
+});
+
+test('tzApply: rejects an unknown zone', async () => {
+  let saved = false;
+  const store = ttStorage({ setClassTimezone: async () => { saved = true; } });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tttzx:5:Mars/Base', '5', 'Mars/Base'] });
+  await handlers(store).tzApply(ctx);
+  assert.equal(saved, false);
+  assert.equal(calls.answerCbQuery[0][0], TT.missing);
+});
+
+test('tzPicker: assistant is blocked', async () => {
+  const store = ttStorage({
+    resolveManageableClass: async (gref) => ({ groupId: 'offline:o:1', rowId: Number(gref), role: 'assistant', name: 'صف' }),
+  });
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:tttz:5', '5'] });
+  await handlers(store).tzPicker(ctx);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
 });
