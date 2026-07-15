@@ -63,6 +63,20 @@ const commands = [
   { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
 ];
 
+// DM (private-chat) menu. Offline classes are user-owned and DM-only — there is
+// no group and no admin, so these users never match the `all_chat_administrators`
+// scope. Without a private-chat scope their menu falls through to the empty
+// `default` scope and shows nothing. These are the commands usable from a DM.
+const privateCommands = [
+  { command: 'start', description: 'عرض رسالة الترحيب' },
+  { command: 'help', description: 'عرض قائمة الأوامر' },
+  { command: 'myid', description: 'عرض رقم حسابك للتسجيل اليدوي' },
+  { command: 'offline', description: 'إدارة صفوفك وتسجيل الحضور بنفسك دون إضافة البوت لمجموعة' },
+  { command: 'myweek', description: 'عرض جدولك الأسبوعي عبر كل حلقاتك' },
+  { command: 'homework', description: 'عرض تكاليفك وتسليمها (للطالبات)' },
+  { command: 'feedback', description: 'الإبلاغ عن المشاكل والاقتراحات (مجهول الهوية)' },
+];
+
 (async () => {
   if (!process.env.BOT_TOKEN) {
     console.error(JSON.stringify({
@@ -86,6 +100,11 @@ const commands = [
     await bot.telegram.setMyCommands(hiddenCommands, { scope: { type: 'all_group_chats' } });
     console.log('✅ Commands cleared for all group chats');
 
+    // Expose the DM-usable commands in every private chat (offline classes,
+    // /myweek, /homework, /feedback…). Offline owners live entirely in DM.
+    await bot.telegram.setMyCommands(privateCommands, { scope: { type: 'all_private_chats' } });
+    console.log('✅ Commands registered for all private chats');
+
     // Expose command menu only to group administrators.
     await bot.telegram.setMyCommands(commands, { scope: { type: 'all_chat_administrators' } });
     console.log('✅ Commands registered for group administrators');
@@ -104,6 +123,7 @@ const commands = [
     console.log('\n✅ All command scopes registered successfully!');
     console.log('   - Default scope hidden');
     console.log('   - All group chats hidden for non-admins');
+    console.log('   - All private chats: DM commands visible');
     console.log('   - Group administrators visible');
   } catch (err) {
     console.error(JSON.stringify({
