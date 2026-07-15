@@ -22,6 +22,21 @@ const TT = TEXT.timetable;
 // (reviewing/grading homework) that never maps to an attendance session.
 const SCHEDULE_TYPES = ['main', 'registeredSecondary', 'training', 'homeworkReview'];
 
+// Some activities span the whole day rather than a fixed hour (e.g. homework
+// review). Such slots store this sentinel in `time_of_day` instead of an HH:MM,
+// are shown as "all day", sort ahead of timed slots, and skip timezone
+// conversion (an all-day activity is the same calendar day in every zone).
+const ALL_DAY = 'allday';
+
+// Slot types that are inherently all-day (no specific time is asked for).
+function isAllDayType(type: string): boolean {
+  return type === 'homeworkReview';
+}
+
+function isAllDaySlot(timeOfDay: string): boolean {
+  return timeOfDay === ALL_DAY;
+}
+
 // Curated timezone list (TEXT.timetable.timezones); first entry is the default.
 const TIMEZONES = TT.timezones as { id: string; label: string }[];
 
@@ -222,6 +237,16 @@ function dayLabel(day: number): string {
   return TT.weekdays[day] ?? String(day);
 }
 
+// How a slot's time is shown: an HH:MM, or the "all day" label for all-day slots.
+function timeDisplay(timeOfDay: string): string {
+  return isAllDaySlot(timeOfDay) ? TT.allDayLabel : timeOfDay;
+}
+
+// Sort key so all-day slots come before timed ones within a day.
+function timeSortKey(timeOfDay: string): string {
+  return isAllDaySlot(timeOfDay) ? '' : timeOfDay;
+}
+
 function readMatch(ctx: Context): RegExpExecArray {
   const m = (ctx as unknown as { match?: RegExpExecArray }).match;
   return m ?? ([] as unknown as RegExpExecArray);
@@ -288,7 +313,7 @@ function canManage(role: string): boolean {
 function panelView(cls: ManageableClass, slots: Slot[], timezone: string, canEdit: boolean) {
   const g = cls.rowId;
   const rows = slots.map((s) => [Markup.button.callback(
-    clampButtonLabel(TT.slotRow(dayLabel(s.dayOfWeek), s.timeOfDay, typeLabel(s.sessionType), s.teacherName)),
+    clampButtonLabel(TT.slotRow(dayLabel(s.dayOfWeek), timeDisplay(s.timeOfDay), typeLabel(s.sessionType), s.teacherName)),
     `o:ttslot:${g}:${s.id}`,
   )]);
   rows.push([Markup.button.callback(TT.weekViewButton, `o:ttweek:${g}`)]);
@@ -398,7 +423,7 @@ function slotMenuView(cls: ManageableClass, slot: Slot, canEdit: boolean) {
     rows.push([Markup.button.callback(TT.removeButton, `o:ttrm:${g}:${slot.id}`)]);
   }
   rows.push([Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]);
-  const text = TT.slotMenuTitle(dayLabel(slot.dayOfWeek), slot.timeOfDay, typeLabel(slot.sessionType), slot.teacherName);
+  const text = TT.slotMenuTitle(dayLabel(slot.dayOfWeek), timeDisplay(slot.timeOfDay), typeLabel(slot.sessionType), slot.teacherName);
   return { text, keyboard: Markup.inlineKeyboard(rows) };
 }
 
@@ -425,7 +450,7 @@ function removeConfirmView(cls: ManageableClass, slot: Slot) {
     [Markup.button.callback(TT.confirmRemoveButton, `o:ttrmx:${g}:${slot.id}`)],
     [Markup.button.callback(TEXT.backButton, `o:ttslot:${g}:${slot.id}`), ...dismissRow()],
   ];
-  return { text: TT.removeConfirm(dayLabel(slot.dayOfWeek), slot.timeOfDay, typeLabel(slot.sessionType)), keyboard: Markup.inlineKeyboard(rows) };
+  return { text: TT.removeConfirm(dayLabel(slot.dayOfWeek), timeDisplay(slot.timeOfDay), typeLabel(slot.sessionType)), keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // The timezone a viewer effectively sees times in: her chosen zone, or the
@@ -448,7 +473,9 @@ function viewPrefsRows(scope: 'c' | 'm', g: string | number) {
 function weekBody(slots: Slot[], fromTz: string, viewTz: string, weekStart: number): string {
   const byDay = new Map<number, { time: string; s: Slot }[]>();
   for (const s of slots) {
-    const c = convertSlot(s.dayOfWeek, s.timeOfDay, fromTz, viewTz);
+    const c = isAllDaySlot(s.timeOfDay)
+      ? { dayOfWeek: s.dayOfWeek, time: s.timeOfDay }
+      : convertSlot(s.dayOfWeek, s.timeOfDay, fromTz, viewTz);
     const list = byDay.get(c.dayOfWeek) ?? [];
     list.push({ time: c.time, s });
     byDay.set(c.dayOfWeek, list);
@@ -457,8 +484,8 @@ function weekBody(slots: Slot[], fromTz: string, viewTz: string, weekStart: numb
   for (const d of weekOrder(weekStart)) {
     const list = byDay.get(d);
     if (!list || !list.length) continue;
-    list.sort((a, b) => a.time.localeCompare(b.time));
-    const lines = list.map(({ time, s }) => TT.weekSlotLine(time, typeLabel(s.sessionType), s.teacherName));
+    list.sort((a, b) => timeSortKey(a.time).localeCompare(timeSortKey(b.time)));
+    const lines = list.map(({ time, s }) => TT.weekSlotLine(timeDisplay(time), typeLabel(s.sessionType), s.teacherName));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
@@ -483,7 +510,9 @@ function myWeekBody(slots: UserSlot[], prefs: UserPrefs): string {
   const byDay = new Map<number, { time: string; tz: string; s: UserSlot }[]>();
   for (const s of slots) {
     const viewTz = prefs.timezone ?? s.timezone;
-    const c = convertSlot(s.dayOfWeek, s.timeOfDay, s.timezone, prefs.timezone);
+    const c = isAllDaySlot(s.timeOfDay)
+      ? { dayOfWeek: s.dayOfWeek, time: s.timeOfDay }
+      : convertSlot(s.dayOfWeek, s.timeOfDay, s.timezone, prefs.timezone);
     const list = byDay.get(c.dayOfWeek) ?? [];
     list.push({ time: c.time, tz: viewTz, s });
     byDay.set(c.dayOfWeek, list);
@@ -492,9 +521,11 @@ function myWeekBody(slots: UserSlot[], prefs: UserPrefs): string {
   for (const d of weekOrder(prefs.weekStart)) {
     const list = byDay.get(d);
     if (!list || !list.length) continue;
-    list.sort((a, b) => a.time.localeCompare(b.time));
+    list.sort((a, b) => timeSortKey(a.time).localeCompare(timeSortKey(b.time)));
     const lines = list.map(({ time, tz, s }) =>
-      TT.myWeekSlotLineTz(time, tzLabel(tz), s.className, typeLabel(s.sessionType), s.teacherName));
+      (isAllDaySlot(time)
+        ? TT.myWeekSlotLineAllDay(TT.allDayLabel, s.className, typeLabel(s.sessionType), s.teacherName)
+        : TT.myWeekSlotLineTz(time, tzLabel(tz), s.className, typeLabel(s.sessionType), s.teacherName)));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
@@ -773,6 +804,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
   }
 
   // After picking type + day, force-reply for the time (captured by onMessage).
+  // All-day types (e.g. homework review) skip the time step and add immediately.
   async function addPromptTime(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
@@ -780,6 +812,15 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const type = m[2] ?? '';
     const day = Number(m[3] ?? NaN);
     if (!SCHEDULE_TYPES.includes(type) || !Number.isInteger(day)) { await ctx.answerCbQuery(TT.missing); return; }
+    if (isAllDayType(type)) {
+      await addScheduleSlot(cls.groupId, { sessionType: type, dayOfWeek: day, timeOfDay: ALL_DAY, teacherId: null });
+      const slots = await listScheduleSlots(cls.groupId);
+      const timezone = await getClassTimezone(cls.groupId);
+      const view = panelView(cls, slots, timezone, canManage(cls.role));
+      await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+      await ctx.answerCbQuery(TT.slotAdded);
+      return;
+    }
     await beginForceReplyAwaiting(ctx, {
       setReplyPrompt,
       groupId: cls.groupId,
@@ -788,17 +829,19 @@ export function createHandlers({ storage }: { storage: Storage }) {
     });
   }
 
-  // Bulk add: one type chosen, then paste many "day time" lines at once.
+  // Bulk add: one type chosen, then paste many lines at once — "day time" for
+  // timed types, or just "day" for all-day types.
   async function addBulkPrompt(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const type = readMatch(ctx)[2] ?? '';
     if (!SCHEDULE_TYPES.includes(type)) { await ctx.answerCbQuery(TT.missing); return; }
+    const prompt = isAllDayType(type) ? TT.bulkPromptAllDay(typeLabel(type)) : TT.bulkPrompt(typeLabel(type));
     await beginForceReplyAwaiting(ctx, {
       setReplyPrompt,
       groupId: cls.groupId,
       record: { action: 'timetableBulk', gref: String(cls.rowId), sessionType: type },
-      sendPrompt: () => ctx.reply(TT.bulkPrompt(typeLabel(type)), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+      sendPrompt: () => ctx.reply(prompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
     });
   }
 
@@ -904,10 +947,23 @@ export function createHandlers({ storage }: { storage: Storage }) {
     };
 
     if (pending.action === 'timetableBulk') {
+      const allDay = isAllDayType(String(pending.sessionType));
       const lines = (msg.text ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
       let added = 0;
       const failed: string[] = [];
       for (const line of lines) {
+        if (allDay) {
+          const day = parseWeekday(line);
+          if (day === null) { failed.push(line); continue; }
+          await addScheduleSlot(pending.groupId, {
+            sessionType: String(pending.sessionType),
+            dayOfWeek: day,
+            timeOfDay: ALL_DAY,
+            teacherId: null,
+          });
+          added += 1;
+          continue;
+        }
         const parsed = parseBulkSlotLine(line);
         if (!parsed) { failed.push(line); continue; }
         await addScheduleSlot(pending.groupId, {

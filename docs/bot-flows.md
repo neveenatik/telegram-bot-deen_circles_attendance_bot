@@ -106,7 +106,7 @@ erDiagram
         bigint group_id FK
         text telegram_user_id "UK with group"
         text name
-        text teacher_type "course/training/recitation"
+        text[] teacher_types "course/training/recitation/homework (multi-role)"
         bool active
     }
     pending_registrations {
@@ -187,7 +187,7 @@ erDiagram
 | `groups` | One row per Telegram chat. `current_series` counts terms; `parent_group_id` links a training group to its main group. |
 | `group_settings` | Per-group config: linked training groups, data-retention days. One row per group. |
 | `members` | The registered roster. Unique per `(group, telegram_user_id)` and per active name. |
-| `teachers` | Course / training / recitation teachers for a group. |
+| `teachers` | Teachers for a group. Each teacher holds a **set of roles** in `teacher_types text[]` (course / training / recitation / homework) — a teacher may hold several at once. |
 | `pending_registrations` | People who asked to join (`/myid`, register widget) awaiting admin approval. |
 | `sessions` | Each attendance run. Only **one** can be `active` per group. Type drives the rules (see §4). |
 | `session_participants` | One row per attendee per session — a **member** (`member_id`) or a **guest** (`guest_name`), never both. Holds status, call state, page, verse. |
@@ -200,6 +200,8 @@ erDiagram
 | `class_material_files` | Files attached to a lesson. Stores only Telegram's `file_id` (Telegram hosts the bytes) plus `file_type` (`document` / `photo` / `video` / `audio`) and a 1-based `position`. Cascade-deleted with the lesson. |
 | `homework` | Homework items per class. Group items carry a `source_message_id` (the tagged assignment post in the linked homework group); offline items have `null`. Soft-deleted via `active`. The linked homework group's Telegram chat id lives on `group_settings.homework_group_id`. |
 | `homework_submissions` | One row per `(homework, member)`. Tracks `submission_message_id` (the student's reply), plus `reviewed` / `reviewed_by` / `reviewed_at` when a teacher reviews it. Unique on `(homework_id, member_id)`. |
+| `class_schedule` | Recurring **weekly roster** slots per class. One row per slot: a `session_type` (`main` / `registeredSecondary` / `training` / `homeworkReview`) on a `day_of_week` (0=Sun..6=Sat) at a `time_of_day`, with an optional assigned `teacher_id`. `homeworkReview` is **all-day** — its `time_of_day` is the sentinel `'allday'` (no fixed hour, timezone-agnostic). Plan-only — slots do not create attendance sessions. See §11. |
+| `user_prefs` | Per-viewer display preferences (one row per user): preferred **view timezone** and **week start** used to render `/myweek` and the per-class weekly view. |
 
 **Two things worth remembering:**
 - A participant is a member **or** a guest — the row uses `member_id` for
@@ -210,8 +212,9 @@ erDiagram
 **Offline (DM) classes reuse the same tables.** A DM-managed class is just a
 `groups` row whose `telegram_chat_id` is synthetic (`offline:<owner>:<uuid>`)
 and whose `owner_user_id` is set. Its roster lives in `members`, its teachers in
-`teachers`, its delegates in `class_managers`, and each session may point at a
-teacher via `sessions.teacher_id`. See §11.
+`teachers`, its delegates in `class_managers`, its weekly roster in
+`class_schedule`, and each session may point at a teacher via
+`sessions.teacher_id`. See §11.
 
 ---
 
@@ -250,10 +253,11 @@ Access: **A** = admin, **C** = group creator, **—** = anyone.
 | **Info** | `/start` A · `/help` — · `/myid` — · `/groupid` A · `/register` A · `/manage` A (DM hub) |
 | **Sessions** | `/startlist` `/startopenlist` `/startsecondarylist` `/startpersonalrecitation` `/startgrouprecitation` `/starttraininglist` (all A) · `/freezelist` A · `/stoplist` A · `/lastreport` — |
 | **Members** | `/students` A · `/pendingstudents` A · `/addstudent` A · `/removestudent` A · `/removeallstudents` C |
-| **Teachers** | `/addteacher` A · `/addteacherreply` A |
+| **Teachers** | `/addteacher` A · `/addteacherreply` A · `/assignteacher` A (adds a role — multi-role) · `/removeteacher` A · `/listteachers` A · `/tagteachers` A |
 | **Training groups** | `/addtraininggroup` `/removetraininggroup` `/listtraininggroups` `/listtrainingstudents` (all A) |
 | **History** | `/classhistory` A · `/studentshistory` A · `/newclass` C · `/removeclassrecord` C · `/removestudentrecord` C |
 | **Offline (DM)** | `/offline` — (manage private classes in DM; see §11) |
+| **Weekly roster** | `/myweek` — (weekly schedule across all your classes, in your preferred timezone; see §11) · `/homework` — (view & submit your homework) |
 | **Utility** | `/sortnames` A · `/tagstudents` A · `/feedback` — |
 
 Handlers live under `lib/handlers/commands/`.
@@ -472,8 +476,9 @@ flowchart TD
     MINE --> HOME[Class home]
     SHARED --> HOME
     HOME --> ROSTER[Students: add / rename / remove /<br/>assign to a training group]
-    HOME --> TEACH[Teachers: add / rename / change type / remove]
+    HOME --> TEACH[Teachers: add by role in bulk / rename /<br/>edit roles (multi-role) / remove]
     HOME --> SESS[Sessions: start · mark attendance · report]
+    HOME --> WEEK[Weekly roster: add slots / bulk add /<br/>assign teacher per slot]
     HOME --> MAT[Materials: add / send to me / remove]
     HOME --> MGRS[Managers: add / role / rename / remove / invite]
     SESS --> ASSIGN[Assign a teacher to the session]
@@ -512,6 +517,29 @@ to one from her member menu, stored on `members.training_group_id`, and each
 group can list its assigned students. (These are *labels within one class* — not
 the linked Telegram groups used by online training sessions in §7.)
 
+### Weekly roster (timetable)
+
+Each class can define a **recurring weekly schedule** from the class home. A slot
+is a `session_type` on a weekday at a time, optionally with an assigned teacher,
+stored in `class_schedule`. Slots are **plan-only** — they do not start
+attendance sessions.
+
+- **Schedulable types:** `main`, `registeredSecondary` (تصحيح التلاوة),
+  `training`, and `homeworkReview` (مراجعة التكاليف). The first three are held at a
+  specific time; **`homeworkReview` is all-day** — you pick only a day and it is
+  stored with the `'allday'` sentinel, shown as «طوال اليوم», sorted ahead of
+  timed slots, and never timezone-shifted.
+- **Bulk add:** pick the type, then paste one entry per line — `day time` for
+  timed types (e.g. `الأحد 10:00`), or just `day` for all-day types. Arabic and
+  English weekday names are accepted; unparseable lines are reported and skipped.
+  This is much faster than adding slots one by one.
+- **Per-viewer preferences:** every user can set her own **view timezone** and
+  **week start** (stored in `user_prefs`) without changing the class timezone.
+  `/myweek` renders her schedule across **all** her classes in that timezone;
+  each class also has its own weekly view.
+- Handlers live in `actions/timetable.ts`; the panel is reached from the offline
+  class home (`o:tt:*`).
+
 ---
 
 ## 12. Appendix: callback prefixes
@@ -530,6 +558,8 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; plus send-to-group / remove | `actions/materials.ts` |
 | `mg:hw*` | Homework tracking from the `/manage` hub (list / item breakdown / tag non-submitters / remove) | `actions/homework.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
+| `o:tt*` | Weekly roster (timetable) from the offline class hub: add slot, bulk add (`o:ttbulk`), assign teacher to a slot, week view, class timezone (`o:tttz*`, region pickers `o:tzr`/`o:tzp`) | `actions/timetable.ts` |
+| `o:mw` / `o:vtz*` / `o:vws*` | Per-viewer prefs for `/myweek`: refresh (`o:mw`), **view timezone** (`o:vtz*`, region pickers `o:vzr`/`o:vzp`) and **week start** (`o:vws*`), stored in `user_prefs` | `actions/timetable.ts` |
 | `o:mat*` | Teaching materials from the offline class hub (add / send to me / remove) | `actions/materials.ts` |
 | `o:hw*` | Homework tracking from the offline class hub (add / per-student toggle / remove) | `actions/homework.ts` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |

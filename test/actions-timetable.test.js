@@ -154,6 +154,61 @@ test('addPromptTime: stores a timetableTime reply prompt', async () => {
   assert.equal(prompts[0].dayOfWeek, 0);
 });
 
+test('addPromptTime: homeworkReview adds an all-day slot immediately (no time prompt)', async () => {
+  const added = [];
+  const prompts = [];
+  const store = ttStorage({
+    addScheduleSlot: async (_g, slot) => { added.push(slot); return added.length; },
+    setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); },
+  });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddd:5:homeworkReview:3', '5', 'homeworkReview', '3'] });
+  await handlers(store).addPromptTime(ctx);
+  assert.equal(prompts.length, 0); // no force-reply for an all-day type
+  assert.deepEqual(added.map((s) => [s.dayOfWeek, s.timeOfDay]), [[3, 'allday']]);
+  assert.equal(calls.editMessageText.length, 1); // panel refreshed in place
+});
+
+test('addBulkPrompt: homeworkReview asks for days only (all-day)', async () => {
+  const prompts = [];
+  const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:homeworkReview', '5', 'homeworkReview'] });
+  await handlers(store).addBulkPrompt(ctx);
+  assert.equal(prompts[0].sessionType, 'homeworkReview');
+  assert.match(calls.reply[0][0], /طوال اليوم/);
+});
+
+test('onMessage: an all-day bulk reply creates one slot per day', async () => {
+  const added = [];
+  const store = ttStorage({
+    getReplyPrompt: async () => ({ action: 'timetableBulk', groupId: 'offline:o:1', gref: '5', sessionType: 'homeworkReview', chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    addScheduleSlot: async (_g, slot) => { added.push(slot); return added.length; },
+  });
+  const telegram = makeTelegram();
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER },
+    message: { message_id: 601, text: 'الأحد\nالثلاثاء\nالخميس', reply_to_message: { message_id: 600 } },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 602 }); },
+  };
+  await handlers(store).onMessage(ctx, async () => {});
+  assert.deepEqual(added.map((s) => [s.dayOfWeek, s.timeOfDay]), [[0, 'allday'], [2, 'allday'], [4, 'allday']]);
+});
+
+test('panel: shows the all-day label for a homework-review slot', async () => {
+  const store = ttStorage({
+    listScheduleSlots: async () => [
+      { id: 3, sessionType: 'homeworkReview', dayOfWeek: 1, timeOfDay: 'allday', teacherId: null, teacherName: null, teacherTypes: null },
+    ],
+  });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tt:5', '5'] });
+  await handlers(store).panel(ctx);
+  const labels = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.text);
+  assert.ok(labels.some((t) => t.includes('طوال اليوم')));
+});
+
 test('onMessage: a valid time reply creates the slot and refreshes the panel', async () => {
   const added = [];
   const store = ttStorage({
