@@ -29,6 +29,8 @@ function matStorage(overrides = {}) {
     removeMaterialFile: async () => {},
     renameMaterial: async () => {},
     renameMaterialFile: async () => {},
+    getAlbumCaption: async () => null,
+    setAlbumCaption: async () => {},
     ...overrides,
   });
 }
@@ -47,9 +49,10 @@ function telegramWithSend(overrides = {}) {
 }
 
 // A hand-built context for an incoming media reply (makeCtx only models text).
-function mediaCtx({ chatId = 777, userId = OWNER, promptMsgId = 555, caption = 'عنوان', document = { file_id: 'FIDX', file_name: 'a.pdf' }, photo = null, reply = true } = {}) {
+function mediaCtx({ chatId = 777, userId = OWNER, promptMsgId = 555, caption = 'عنوان', document = { file_id: 'FIDX', file_name: 'a.pdf' }, photo = null, reply = true, mediaGroupId = null } = {}) {
   const calls = { reply: [], answerCbQuery: [] };
   const message = { message_id: 900, caption };
+  if (mediaGroupId) message.media_group_id = mediaGroupId;
   if (document) message.document = document;
   if (photo) message.photo = photo;
   if (reply) message.reply_to_message = { message_id: promptMsgId };
@@ -431,43 +434,46 @@ test('onMedia: an uncaptioned album photo falls back to the lesson title when no
   assert.equal(files[0].fileName, 'عنوان المادة');
 });
 
-test('onMedia: an uncaptioned file inherits the current part name (last caption)', async () => {
+test('onMedia: an uncaptioned album item inherits the album caption via media_group_id', async () => {
   const files = [];
   const storage = matStorage({
-    // A prior captioned file set the part name to "النطق" (pronunciation).
-    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', lastCaption: 'النطق', count: 1 }),
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', count: 1 }),
     addMaterialFile: async (id, f) => { files.push(f); return 4; },
     setReplyPrompt: async () => {},
+    // The captioned sibling of album "G1" already stored its caption.
+    getAlbumCaption: async (mgid) => (mgid === 'G1' ? 'النطق' : null),
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
-  const { ctx } = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'PIMG' }] });
+  // A later album item: no caption, but shares the album's media_group_id.
+  const { ctx } = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'PIMG' }], mediaGroupId: 'G1' });
 
   await h.onMedia(ctx, async () => {});
 
   assert.equal(files.length, 1);
-  // Inherits the part name, not the lesson title.
+  // Inherits the album caption, not the lesson title.
   assert.equal(files[0].fileName, 'النطق');
 });
 
-test('onMedia: a captioned file starts a new part that later files inherit', async () => {
+test('onMedia: a captioned album item records the album caption for its siblings', async () => {
   const files = [];
-  const prompts = [];
+  const albums = [];
   const storage = matStorage({
-    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', lastCaption: 'النطق', count: 1 }),
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', count: 1 }),
     addMaterialFile: async (id, f) => { files.push(f); return 4; },
-    setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); },
+    setReplyPrompt: async () => {},
+    setAlbumCaption: async (mgid, caption) => { albums.push({ mgid, caption }); },
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
-  // A new captioned photo opens the "الكتابة" (writing) part.
-  const { ctx } = mediaCtx({ caption: 'الكتابة', document: null, photo: [{ file_id: 'PIMG' }] });
+  // The first item of album "G2" carries the caption "الكتابة".
+  const { ctx } = mediaCtx({ caption: 'الكتابة', document: null, photo: [{ file_id: 'PIMG' }], mediaGroupId: 'G2' });
 
   await h.onMedia(ctx, async () => {});
 
   assert.equal(files[0].fileName, 'الكتابة');
-  // The session now remembers the new part name for subsequent uncaptioned files.
-  assert.equal(prompts[0].rec.lastCaption, 'الكتابة');
+  // The caption is stashed under the album id so later items reuse it.
+  assert.deepEqual(albums, [{ mgid: 'G2', caption: 'الكتابة' }]);
 });
 
 test('onMedia: a later file caption becomes that file\'s name', async () => {

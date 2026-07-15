@@ -400,10 +400,11 @@ reuses the same force-reply record (`action: 'materialUpload'`), but because
 (`bot.on(['document','photo','video','audio'])`) consumes the reply, reads the
 `file_id`, and uses the message caption as the title (single-step add). A
 session stays open so several files (or albums) can be appended; the first
-file's caption is the lesson title, and each captioned file starts a new
-"part" whose name later uncaptioned items (e.g. the rest of an album, which
-carry no caption) inherit — so a batch of files shares one readable name
-instead of `file 1`, `file 2`, ….
+file's caption is the lesson title, and each file is named by its own caption.
+Telegram puts a caption on only one item of an album and delivers each item as a
+separate webhook call, so the caption is stashed by `media_group_id`
+(`get`/`setAlbumCaption`) and every sibling reads it back — a whole batch shares
+one readable name instead of `file 1`, `file 2`, ….
 
 ---
 
