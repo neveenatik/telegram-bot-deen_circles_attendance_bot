@@ -407,6 +407,29 @@ test('teachers: each teacher is a tappable button showing her type', async () =>
   assert.match(labels, /أمل/);
 });
 
+test('teachers: groups teachers under role-section headers', async () => {
+  const storage = offlineStorage({
+    getTeachers: async () => [
+      { id: 7, userId: 'offline:t1', name: 'أمل', types: ['courseteacher', 'recitationteacher'] },
+      { id: 8, userId: 'offline:t2', name: 'سارة', types: [] },
+    ],
+  });
+  const { teachers } = handlers(storage);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:teach:5', '5'] });
+  await teachers(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const texts = kb.flat().map((b) => b.text);
+  assert.ok(texts.includes(TEXT.teacherTypeLabel.courseteacher), 'course header');
+  assert.ok(texts.includes(TEXT.teacherTypeLabel.recitationteacher), 'recitation header');
+  // A multi-role teacher appears under each of her roles.
+  const amalRows = kb.filter((row) => row.some((b) => b.callback_data === 'o:tch:5:7'));
+  assert.equal(amalRows.length, 2, 'أمل appears under both her roles');
+  // A role-less teacher shows under the "other" section, still tappable.
+  assert.ok(kb.flat().some((b) => b.callback_data === 'o:tch:5:8'), 'role-less teacher shown');
+  assert.ok(kb.flat().some((b) => b.callback_data === 'o:noop'), 'headers use noop');
+});
+
+
 test('addTeacherPrompt: shows a role picker (bulk add by role)', async () => {
   const { addTeacherPrompt } = handlers(offlineStorage());
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:addteach:5', '5'] });

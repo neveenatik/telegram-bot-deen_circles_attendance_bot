@@ -148,6 +148,31 @@ test('mg:teach lists teachers with add, back-to-hub and close rows', async () =>
   assert.ok(data.includes('msg:dismiss'), 'has close row');
 });
 
+test('mg:teach groups teachers under role-section headers', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTeachers: async () => [
+      { userId: '111', name: 'أمل', types: ['courseteacher', 'recitationteacher'] },
+      { userId: '222', name: 'هدى', types: ['recitationteacher'] },
+    ],
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:teach:123', '123'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.openTeachers(ctx);
+
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const texts = kb.flat().map((b) => b.text);
+  // Section headers (non-actionable) for each role that has teachers.
+  assert.ok(texts.includes(TEXT.teacherTypeLabel.courseteacher), 'course header');
+  assert.ok(texts.includes(TEXT.teacherTypeLabel.recitationteacher), 'recitation header');
+  // A multi-role teacher appears under each of her roles.
+  const amalRows = kb.filter((row) => row.some((b) => b.callback_data === 'mg:tch:123:111'));
+  assert.equal(amalRows.length, 2, 'أمل appears under both her roles');
+  // Header buttons resolve to a harmless noop callback.
+  assert.ok(kb.flat().some((b) => b.callback_data === 'mg:noop'), 'headers use noop');
+});
+
 test('mg:tch opens a teacher menu (rename / change type / remove)', async () => {
   const telegram = makeTelegram();
   const storage = makeStorage({ getTeachers: async () => SAMPLE_TEACHERS });
