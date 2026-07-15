@@ -1171,14 +1171,15 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const items = await getHomework(cls.groupId);
     if (!items.length) { await ctx.answerCbQuery(HW.reportEmpty); return; }
-    const members = await getMembersWithIds(cls.groupId);
+    const members = sortRosterMembers(await getMembersWithIds(cls.groupId));
     const entries: ReportEntry[] = [];
     for (const item of items) {
       const subs = await getSubmissions(item.id);
       const byMember = new Map(subs.filter((s) => s.memberId !== null).map((s) => [s.memberId as number, s]));
       const lines = members.map((m) => {
         const s = byMember.get(m.id);
-        return `${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${escapeTelegramMarkdown(m.name)}`;
+        const num = m.listNumber != null ? `${m.listNumber}. ` : '';
+        return `${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${num}${escapeTelegramMarkdown(m.name)}`;
       });
       entries.push({ item, total: members.length, counts: tallySubmissions(subs), lines });
     }
