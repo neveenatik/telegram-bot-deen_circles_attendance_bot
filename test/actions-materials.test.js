@@ -26,6 +26,7 @@ function matStorage(overrides = {}) {
     addMaterial: async () => 2,
     addMaterialFile: async () => 3,
     removeMaterial: async () => {},
+    removeMaterialFile: async () => {},
     renameMaterial: async () => {},
     ...overrides,
   });
@@ -135,6 +136,116 @@ test('offline: confirming removal deletes and re-renders the list', async () => 
   assert.deepEqual(removed, [['offline:o:1', '1']]);
   assert.ok(editData(calls).includes('o:matadd:5'));
   assert.equal(calls.answerCbQuery[0][0], MAT.removedToast('مادة أولى'));
+});
+
+// ── Per-file management (preview / delete a single file) ───────────────────
+
+// A lesson holding two files, for exercising the per-file surface.
+function twoFileStorage(overrides = {}) {
+  return matStorage({
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: 'مادة أولى', addedBy: null, createdAt: null,
+      files: [
+        { id: 11, fileId: 'FID1', fileType: 'document', fileName: 'أول.pdf', position: 1 },
+        { id: 12, fileId: 'FID2', fileType: 'photo', fileName: null, position: 2 },
+      ],
+      fileCount: 2,
+    }),
+    ...overrides,
+  });
+}
+
+test('offline: item menu offers manage-files when there is more than one file', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:matfiles:5:1'));
+});
+
+test('offline: item menu hides manage-files for a single-file lesson', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: matStorage(), telegram });
+
+  await h.materialItemOffline(ctx);
+
+  assert.ok(!editData(calls).includes('o:matfiles:5:1'));
+});
+
+test('offline: files view lists each file with a preview and a delete action', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfiles:5:1', '5', '1'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFilesOffline(ctx);
+
+  const data = editData(calls);
+  assert.ok(data.includes('o:matfprev:5:1:11'));
+  assert.ok(data.includes('o:matfrm:5:1:11'));
+  assert.ok(data.includes('o:matfprev:5:1:12'));
+  assert.ok(data.includes('o:matfrm:5:1:12'));
+});
+
+test('offline: previewing a file resends just that file to the admin', async () => {
+  const { telegram, sent } = telegramWithSend();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matfprev:5:1:12', '5', '1', '12'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFilePreviewOffline(ctx);
+
+  assert.equal(sent.sendPhoto.length, 1);
+  assert.equal(sent.sendPhoto[0][1], 'FID2');
+  assert.equal(sent.sendDocument.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.previewSent);
+});
+
+test('offline: confirming a file delete removes only that file and re-renders', async () => {
+  const removed = [];
+  const storage = matStorage({
+    removeMaterialFile: async (g, mid, fid) => { removed.push([g, mid, fid]); },
+  });
+  // First getMaterialById call (guard) returns two files; the refresh after
+  // delete returns one file → falls back to the item menu.
+  let call = 0;
+  storage.getMaterialById = async (_g, id) => {
+    call += 1;
+    if (call === 1) {
+      return {
+        id: Number(id), title: 'مادة أولى', addedBy: null, createdAt: null,
+        files: [
+          { id: 11, fileId: 'FID1', fileType: 'document', fileName: 'أول.pdf', position: 1 },
+          { id: 12, fileId: 'FID2', fileType: 'photo', fileName: null, position: 2 },
+        ],
+        fileCount: 2,
+      };
+    }
+    return {
+      id: Number(id), title: 'مادة أولى', addedBy: null, createdAt: null,
+      files: [{ id: 11, fileId: 'FID1', fileType: 'document', fileName: 'أول.pdf', position: 1 }],
+      fileCount: 1,
+    };
+  };
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:12', '5', '1', '12'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialFileRemoveExecOffline(ctx);
+
+  assert.deepEqual(removed, [['offline:o:1', 1, 12]]);
+  assert.equal(calls.answerCbQuery[0][0], MAT.fileRemovedToast);
+  // Only one file left → shows the item menu (not the files list).
+  assert.ok(editData(calls).includes('o:matget:5:1'));
+});
+
+test('offline: refuses to delete the last remaining file', async () => {
+  const removed = [];
+  const storage = matStorage({ removeMaterialFile: async (...a) => { removed.push(a); } });
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:11', '5', '1', '11'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialFileRemoveExecOffline(ctx);
+
+  assert.equal(removed.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.cannotDeleteLastFile);
 });
 
 // ── Media capture (onMedia) ────────────────────────────────────────────────

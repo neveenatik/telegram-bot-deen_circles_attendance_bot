@@ -197,7 +197,7 @@ erDiagram
 | `processed_updates` | Dedupe log so a Telegram retry can't double-process an update. No foreign keys. |
 | `class_managers` | Delegates for **offline (DM) classes** (see §11). One row per `(group, user)` with a `manager_role` of `operator` or `assistant`. The class owner stays in `groups.owner_user_id`. |
 | `class_materials` | Teaching materials per class. A row is a *lesson* (a `title`) that owns one or more files in `class_material_files`. Soft-deleted via `active`. Its files are reused to resend the lesson on demand (see §10/§11). |
-| `class_material_files` | Files attached to a lesson. Stores only Telegram's `file_id` (Telegram hosts the bytes) plus `file_type` (`document` / `photo` / `video` / `audio`) and a 1-based `position`. Cascade-deleted with the lesson. |
+| `class_material_files` | Files attached to a lesson. Stores only Telegram's `file_id` (Telegram hosts the bytes) plus `file_type` (`document` / `photo` / `video` / `audio`) and a 1-based `position`. Cascade-deleted with the lesson, or hard-deleted one at a time from the manage-files view. |
 | `homework` | Homework items per class. Group items carry a `source_message_id` (the tagged assignment post in the linked homework group); offline items have `null`. Soft-deleted via `active`. The linked homework group's Telegram chat id lives on `group_settings.homework_group_id`. |
 | `homework_submissions` | One row per `(homework, member)`. Tracks `submission_message_id` (the student's reply), plus `reviewed` / `reviewed_by` / `reviewed_at` when a teacher reviews it. Unique on `(homework_id, member_id)`. |
 | `class_schedule` | Recurring **weekly roster** slots per class. One row per slot: a `session_type` (`main` / `registeredSecondary` / `training` / `homeworkReview`) on a `day_of_week` (0=Sun..6=Sat) at a `time_of_day`, with an optional assigned `teacher_id`. `homeworkReview` is **all-day** — its `time_of_day` is the sentinel `'allday'` (no fixed hour, timezone-agnostic). Plan-only — slots do not create attendance sessions. See §11. |
@@ -440,7 +440,7 @@ flowchart TD
     HUB --> HIST[History — /classhistory panel]
     HUB --> TEACH[Teachers editor:<br/>add / rename / type / remove]
     HUB --> TG[Training-groups editor:<br/>add / rename / remove / view roster]
-    HUB --> MAT[Teaching materials:<br/>add / send to group / remove]
+    HUB --> MAT[Teaching materials:<br/>add / send to group / preview + delete a file / remove]
     HUB --> OFF[Offline classes — o:root]
 ```
 
@@ -453,6 +453,11 @@ flowchart TD
 - The **teaching materials** panel (owner/operator only) lists a class's stored
   files; from the group hub a material's action is **send to the group** (the
   bot resends the file live into the class chat).
+- **Per-file management:** a lesson with more than one file offers a *manage
+  files* view where each file can be **previewed** (the bot resends just that
+  file) or **deleted** individually — so removing one attachment never means
+  re-uploading the rest. The last remaining file can't be deleted (remove the
+  whole lesson instead).
 - The **offline** button points at the user-owned `o:root` entry (§11) — offline
   classes self-gate, so no group id is needed.
 
@@ -562,12 +567,12 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `pr:*` | Pending registrations / register widget | `actions/members.js` |
 | `h:*` | History browse & edit | `actions/history.js` |
 | `mg:*` | Admin control hub (`/manage`): members, pending, history, teachers, training groups | `actions/hub.js` |
-| `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; plus send-to-group / remove | `actions/materials.ts` |
+| `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; per-file `matfiles`/`matfprev`/`matfrm`/`matfrmx` preview or delete a single file; plus send-to-group / remove | `actions/materials.ts` |
 | `mg:hw*` | Homework tracking from the `/manage` hub (list / item breakdown / tag non-submitters / remove) | `actions/homework.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
 | `o:tt*` | Weekly roster (timetable) from the offline class hub: add slot (type → teacher → day → time; `o:ttaddt`/`o:ttaddg`/`o:ttaddd`), bulk add (`o:ttbulk`), edit a slot's day (`o:tted`/`o:ttsd`) or time (`o:ttet`), assign teacher to a slot, week view, class timezone (`o:tttz*`, region pickers `o:tzr`/`o:tzp`) | `actions/timetable.ts` |
 | `o:mw` / `o:vtz*` / `o:vws*` | Per-viewer prefs for `/myweek`: refresh (`o:mw`), **view timezone** (`o:vtz*`, region pickers `o:vzr`/`o:vzp`) and **week start** (`o:vws*`), stored in `user_prefs` | `actions/timetable.ts` |
-| `o:mat*` | Teaching materials from the offline class hub (add / send to me / remove) | `actions/materials.ts` |
+| `o:mat*` | Teaching materials from the offline class hub (add / send to me / preview + delete a single file via `matfiles`/`matfprev`/`matfrm`/`matfrmx` / remove) | `actions/materials.ts` |
 | `o:hw*` | Homework tracking from the offline class hub (add / per-student toggle / remove) | `actions/homework.ts` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |
 | `aw:cancel` | Cancel a text-reply prompt | `actions/manage.js` |
