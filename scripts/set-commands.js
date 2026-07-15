@@ -55,6 +55,8 @@ const commands = [
 
   // Offline (DM-only) classes
   { command: 'offline', description: 'إدارة صفوفك وتسجيل الحضور بنفسك دون إضافة البوت لمجموعة' },
+  { command: 'myweek', description: 'عرض جدولك الأسبوعي عبر كل حلقاتك' },
+  { command: 'homework', description: 'عرض تكاليفك وتسليمها (للطالبات)' },
 
   // Utilities
   { command: 'sortnames', description: 'ترتيب أسماء (فوري أو start/add/done) (للمشرف)' },
