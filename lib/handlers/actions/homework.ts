@@ -28,13 +28,25 @@ import { clampButtonLabel } from '../../historyUtils.js';
 const HW = TEXT.homework;
 
 type Surface = 'offline' | 'group';
+type FileType = 'document' | 'photo' | 'video' | 'audio';
+
+interface HomeworkFile {
+  id: number;
+  fileId: string;
+  fileType: FileType;
+  fileName: string | null;
+  position: number;
+}
 
 interface HomeworkItem {
   id: number;
   title: string;
+  content: string | null;
   sourceMessageId: number | null;
   postedBy: string | null;
   createdAt: string | null;
+  files: HomeworkFile[];
+  fileCount: number;
 }
 
 interface Member {
@@ -89,6 +101,8 @@ interface ReplyPromptRecord {
   surface?: Surface;
   groupId?: string;
   gref?: string;
+  itemId?: number | string;
+  count?: number;
   chatId?: number | string;
   msgId?: number;
   [key: string]: unknown;
@@ -109,6 +123,8 @@ interface Storage {
   getHomeworkBySourceMessage(groupId: string, sourceMessageId: number): Promise<HomeworkItem | null>;
   addHomework(groupId: string, homework: { title: string; sourceMessageId: number | null; postedBy: string | null }): Promise<number | null>;
   removeHomework(groupId: string, homeworkId: string): Promise<void>;
+  addHomeworkFile(homeworkId: number, file: { fileId: string; fileType: FileType; fileName: string | null }): Promise<number | null>;
+  setHomeworkContent(groupId: string, homeworkId: string, content: string | null): Promise<void>;
   // Submissions.
   getSubmissions(homeworkId: number): Promise<Submission[]>;
   recordSubmission(homeworkId: number, memberId: number, submissionMessageId?: number | null): Promise<number | null>;
@@ -137,12 +153,34 @@ interface IncomingMessage {
   text?: string;
   caption?: string;
   reply_to_message?: { message_id: number };
+  document?: { file_id: string; file_name?: string };
+  photo?: Array<{ file_id: string }>;
+  video?: { file_id: string; file_name?: string };
+  audio?: { file_id: string; file_name?: string };
 }
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
 function hasTag(text: string): boolean {
   return text.includes(HW.tag);
+}
+
+// Extract the single supported attachment from an incoming message, if any.
+function extractFile(msg: IncomingMessage): { fileId: string; fileType: FileType; fileName: string | null } | null {
+  if (msg.document) {
+    return { fileId: msg.document.file_id, fileType: 'document', fileName: msg.document.file_name ?? null };
+  }
+  if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+    const largest = msg.photo[msg.photo.length - 1];
+    if (largest) return { fileId: largest.file_id, fileType: 'photo', fileName: null };
+  }
+  if (msg.video) {
+    return { fileId: msg.video.file_id, fileType: 'video', fileName: msg.video.file_name ?? null };
+  }
+  if (msg.audio) {
+    return { fileId: msg.audio.file_id, fileType: 'audio', fileName: msg.audio.file_name ?? null };
+  }
+  return null;
 }
 
 function extractTitle(text: string): string {
@@ -263,13 +301,23 @@ function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: Memb
       `o:hwtog:${gref}:${item.id}:${m.id}`,
     )]);
   }
+  // Content management (teacher's assignment material): set/clear text, attach
+  // media, and send the whole content to the manager's own chat to preview.
+  rows.push([
+    Markup.button.callback(HW.setTextButton, `o:hwtext:${gref}:${item.id}`),
+    Markup.button.callback(HW.attachButton, `o:hwatt:${gref}:${item.id}`),
+  ]);
+  if (item.content || item.fileCount) {
+    rows.push([Markup.button.callback(HW.viewContentButton, `o:hwview:${gref}:${item.id}`)]);
+  }
   rows.push([Markup.button.callback(HW.removeButton, `o:hwrm:${gref}:${item.id}`)]);
   rows.push([Markup.button.callback(TEXT.backButton, `o:hw:${gref}`)]);
   rows.push(dismissRow());
 
+  const contentLine = HW.contentLabel(item.content ? item.content.length : 0, item.fileCount);
   const head = total
-    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed, resubmitted)}\n\n${HW.manageHint}`
-    : `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n\n${HW.noStudents}`;
+    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed, resubmitted)}\n${contentLine}\n\n${HW.manageHint}`
+    : `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${contentLine}\n\n${HW.noStudents}`;
   return { text: head, keyboard: Markup.inlineKeyboard(rows) };
 }
 
@@ -282,6 +330,18 @@ function homeworkRemoveConfirmView(surface: Surface, token: string, item: Homewo
     dismissRow(),
   ];
   return { text: HW.removeConfirm(escapeTelegramMarkdown(item.title)), keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Shown on the offline panel while a content-attach upload session is active.
+// The Done button carries the live force-reply prompt's message id so tapping it
+// closes that prompt and returns to the item detail.
+function homeworkContentSessionView(gref: string, item: HomeworkItem, count: number, promptMsgId: number) {
+  const rows = [
+    [Markup.button.callback(HW.attachDoneButton, `o:hwattdone:${gref}:${item.id}:${promptMsgId}`)],
+    dismissRow(),
+  ];
+  const text = `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.attachCount(count)}`;
+  return { text, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // One homework item's slice of the printable report: its counts plus a marker
@@ -331,6 +391,8 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     getHomeworkBySourceMessage,
     addHomework,
     removeHomework,
+    addHomeworkFile,
+    setHomeworkContent,
     getSubmissions,
     recordSubmission,
     markReviewedByMessage,
@@ -363,7 +425,47 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     return teachers.some((t) => t.type === 'homeworkteacher' && String(t.userId) === String(userId));
   }
 
-  // ── Message listener (homework group live flow + offline add-title reply) ────
+  // Send a homework item's content (text body first, then each media file) to a
+  // chat. Used to preview content to a manager and (Phase 3) deliver it to a
+  // student. Returns false if the item has no content at all.
+  async function sendHomeworkContent(chatId: number | string, item: HomeworkItem): Promise<boolean> {
+    let sentAnything = false;
+    if (item.content) {
+      await telegram.sendMessage(chatId, `${HW.contentCaption(item.title)}\n\n${item.content}`, { parse_mode: 'Markdown' });
+      sentAnything = true;
+    }
+    for (const file of item.files) {
+      switch (file.fileType) {
+        case 'document': await telegram.sendDocument(chatId, file.fileId); break;
+        case 'photo': await telegram.sendPhoto(chatId, file.fileId); break;
+        case 'video': await telegram.sendVideo(chatId, file.fileId); break;
+        case 'audio': await telegram.sendAudio(chatId, file.fileId); break;
+      }
+      sentAnything = true;
+    }
+    return sentAnything;
+  }
+
+  // Re-render an offline homework item-detail panel in place (after content
+  // changes made via a force-reply, where the panel lives on another message).
+  async function refreshOfflineItemPanel(
+    chatId: number | string, msgId: number, groupId: string, gref: string, itemId: string,
+  ): Promise<void> {
+    const item = await getHomeworkById(groupId, itemId);
+    if (!item) return;
+    const [members, submissions] = await Promise.all([
+      getMembersWithIds(groupId),
+      getSubmissions(item.id),
+    ]);
+    const view = homeworkOfflineItemView(gref, item, members, submissions);
+    try {
+      await telegram.editMessageText(chatId, msgId, undefined, view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    } catch (err) {
+      logTelegramError('homework.content.refreshPanel', err, { chatId: String(chatId), messageId: msgId });
+    }
+  }
+
+  // ── Message listener (homework group live flow + offline force replies) ─────
 
   async function onHomeworkMessage(ctx: Context, next: () => Promise<void>): Promise<void> {
     const chat = ctx.chat;
@@ -371,39 +473,105 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const userId = ctx.from?.id;
     if (!chat || !msg || userId === undefined) return next();
 
-    // Private chat: the only homework concern is an owner answering the offline
-    // "add homework title" force-reply. Everything else falls through to text.js.
+    // Private chat: the owner/operator answers an offline force-reply — add a
+    // homework title, set an item's text body, or upload a content file.
+    // Everything else falls through to text.js.
     if (chat.type === 'private') {
       const replyTo = msg.reply_to_message;
       if (!replyTo) return next();
       const chatKey = String(chat.id);
       const pending = await getReplyPrompt(chatKey, replyTo.message_id);
-      if (!pending || pending.action !== 'homeworkAddOffline' || !pending.groupId) return next();
+      if (!pending || !pending.groupId) return next();
 
-      const title = (msg.text ?? '').trim();
-      if (!title) {
-        // Keep the prompt open so she can reply again with a title.
-        await replyEphemeral(ctx, HW.emptyTitle);
+      if (pending.action === 'homeworkAddOffline') {
+        const title = (msg.text ?? '').trim();
+        if (!title) {
+          // Keep the prompt open so she can reply again with a title.
+          await replyEphemeral(ctx, HW.emptyTitle);
+          return;
+        }
+        await delReplyPrompt(chatKey, replyTo.message_id);
+        await addHomework(pending.groupId, { title, sourceMessageId: null, postedBy: String(userId) });
+        await replyEphemeral(ctx, HW.added(title), { parse_mode: 'Markdown' });
+
+        // Refresh the originating offline panel back to the (now longer) list.
+        if (pending.chatId === undefined || pending.msgId === undefined) return;
+        const list = await getHomework(pending.groupId);
+        const view = homeworkListView('offline', String(pending.gref ?? ''), list);
+        try {
+          await telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
+            parse_mode: 'Markdown', ...view.keyboard,
+          });
+        } catch (err) {
+          logTelegramError('homework.add.refreshPanel', err, {
+            chatId: String(pending.chatId), messageId: pending.msgId,
+          });
+        }
         return;
       }
-      await delReplyPrompt(chatKey, replyTo.message_id);
-      await addHomework(pending.groupId, { title, sourceMessageId: null, postedBy: String(userId) });
-      await replyEphemeral(ctx, HW.added(title), { parse_mode: 'Markdown' });
 
-      // Refresh the originating offline panel back to the (now longer) list.
-      if (pending.chatId === undefined || pending.msgId === undefined) return;
-      const list = await getHomework(pending.groupId);
-      const view = homeworkListView('offline', String(pending.gref ?? ''), list);
-      try {
-        await telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
-          parse_mode: 'Markdown', ...view.keyboard,
-        });
-      } catch (err) {
-        logTelegramError('homework.add.refreshPanel', err, {
-          chatId: String(pending.chatId), messageId: pending.msgId,
-        });
+      if (pending.action === 'homeworkContentText') {
+        const itemId = String(pending.itemId ?? '');
+        const body = (msg.text ?? '').trim();
+        await delReplyPrompt(chatKey, replyTo.message_id);
+        await setHomeworkContent(pending.groupId, itemId, body);
+        await replyEphemeral(ctx, body ? HW.textSaved : HW.textCleared);
+        if (pending.chatId !== undefined && pending.msgId !== undefined) {
+          await refreshOfflineItemPanel(pending.chatId, pending.msgId, pending.groupId, String(pending.gref ?? ''), itemId);
+        }
+        return;
       }
-      return;
+
+      if (pending.action === 'homeworkContentUpload') {
+        const itemId = String(pending.itemId ?? '');
+        const file = extractFile(msg);
+        if (!file) {
+          // Keep the prompt open so she can reply again with a supported file.
+          await replyEphemeral(ctx, HW.attachUnsupported);
+          return;
+        }
+        const caption = (msg.caption ?? '').trim();
+        await addHomeworkFile(Number(pending.itemId), {
+          fileId: file.fileId,
+          fileType: file.fileType,
+          fileName: caption || file.fileName,
+        });
+        const count = (pending.count ?? 0) + 1;
+
+        // Rotate the prompt: retire the one just replied to, arm the next.
+        await delReplyPrompt(chatKey, replyTo.message_id);
+        const nextPrompt = await ctx.reply(HW.attachMorePrompt, {
+          parse_mode: 'Markdown', reply_markup: { force_reply: true },
+        });
+        await setReplyPrompt(chatKey, nextPrompt.message_id, {
+          action: 'homeworkContentUpload',
+          surface: 'offline',
+          gref: pending.gref,
+          groupId: pending.groupId,
+          itemId: pending.itemId,
+          count,
+          chatId: pending.chatId,
+          msgId: pending.msgId,
+        });
+
+        // Refresh the originating panel to the session view (running count + Done).
+        if (pending.chatId === undefined || pending.msgId === undefined) return;
+        const item = await getHomeworkById(pending.groupId, itemId);
+        if (!item) return;
+        const view = homeworkContentSessionView(String(pending.gref ?? ''), item, count, nextPrompt.message_id);
+        try {
+          await telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
+            parse_mode: 'Markdown', ...view.keyboard,
+          });
+        } catch (err) {
+          logTelegramError('homework.content.upload.refreshPanel', err, {
+            chatId: String(pending.chatId), messageId: pending.msgId,
+          });
+        }
+        return;
+      }
+
+      return next();
     }
 
     if (chat.type !== 'group' && chat.type !== 'supergroup') return next();
@@ -633,6 +801,83 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery();
   }
 
+  // Set (or clear) a homework item's text body via a force-reply. The reply is
+  // captured by onHomeworkMessage (action 'homeworkContentText').
+  async function homeworkSetTextOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'homeworkContentText', surface: 'offline', gref: String(cls.rowId), itemId: item.id },
+      sendPrompt: () => ctx.reply(HW.textPrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
+  // Open a content-attach upload session: arm a force-reply and switch the panel
+  // to the session view. Files replied are captured by onHomeworkMessage
+  // (action 'homeworkContentUpload'), which re-arms the next prompt.
+  async function homeworkAttachOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    const prompt = await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'homeworkContentUpload', surface: 'offline', gref: String(cls.rowId), itemId: item.id, count: item.fileCount },
+      sendPrompt: () => ctx.reply(HW.attachPrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+    const view = homeworkContentSessionView(String(cls.rowId), item, item.fileCount, prompt.message_id);
+    try {
+      await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    } catch (err) {
+      logTelegramError('homework.attach.begin', err, { gref: String(cls.rowId), itemId: id });
+    }
+  }
+
+  // End a content-attach session: close the live prompt and return to the item.
+  async function homeworkAttachDoneOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const promptMsgId = Number(m[3] ?? 0);
+    if (promptMsgId && ctx.chat) await delReplyPrompt(String(ctx.chat.id), promptMsgId);
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    const [members, submissions] = await Promise.all([
+      getMembersWithIds(cls.groupId),
+      getSubmissions(item.id),
+    ]);
+    const view = homeworkOfflineItemView(String(cls.rowId), item, members, submissions);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // Send the item's content (text + media) to the manager's own chat to preview.
+  async function homeworkViewContentOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    const userId = ctx.from?.id;
+    if (userId === undefined) return;
+    if (!item.content && !item.fileCount) { await ctx.answerCbQuery(HW.noContent); return; }
+    try {
+      await sendHomeworkContent(userId, item);
+      await ctx.answerCbQuery(HW.contentSentToast);
+    } catch (err) {
+      logTelegramError('homework.viewContent.offline', err, { gref: String(cls.rowId), itemId: id });
+      await ctx.answerCbQuery(HW.sendFailed);
+    }
+  }
+
   // Cycle one student's state: ⬜️ → 📝 (submit) → ✅ (review) → 🔁 (resubmit) → ⬜️.
   async function homeworkToggleOffline(ctx: Context): Promise<void> {
     const cls = await resolveOffline(ctx);
@@ -710,6 +955,10 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     homeworkOffline,
     homeworkAddOffline,
     homeworkItemOffline,
+    homeworkSetTextOffline,
+    homeworkAttachOffline,
+    homeworkAttachDoneOffline,
+    homeworkViewContentOffline,
     homeworkToggleOffline,
     homeworkReportOffline,
     homeworkRemoveOffline,
@@ -733,6 +982,10 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:hw:(\d+)$/, h.homeworkOffline);
   bot.action(/^o:hwadd:(\d+)$/, h.homeworkAddOffline);
   bot.action(/^o:hwit:(\d+):(\d+)$/, h.homeworkItemOffline);
+  bot.action(/^o:hwtext:(\d+):(\d+)$/, h.homeworkSetTextOffline);
+  bot.action(/^o:hwatt:(\d+):(\d+)$/, h.homeworkAttachOffline);
+  bot.action(/^o:hwattdone:(\d+):(\d+):(\d+)$/, h.homeworkAttachDoneOffline);
+  bot.action(/^o:hwview:(\d+):(\d+)$/, h.homeworkViewContentOffline);
   bot.action(/^o:hwtog:(\d+):(\d+):(\d+)$/, h.homeworkToggleOffline);
   bot.action(/^o:hwrep:(\d+)$/, h.homeworkReportOffline);
   bot.action(/^o:hwrm:(\d+):(\d+)$/, h.homeworkRemoveOffline);

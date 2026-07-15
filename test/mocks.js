@@ -25,6 +25,10 @@ export function makeTelegram(overrides = {}) {
     unpinChatMessage: [],
     answerCbQuery: [],
     getChatMember: [],
+    sendDocument: [],
+    sendPhoto: [],
+    sendVideo: [],
+    sendAudio: [],
   };
   const telegram = {
     calls,
@@ -38,6 +42,10 @@ export function makeTelegram(overrides = {}) {
     getChatMember(...a) { calls.getChatMember.push(a); return Promise.resolve({ status: 'administrator' }); },
     getChat(...a) { (calls.getChat || (calls.getChat = [])).push(a); return Promise.resolve({ id: Number(a[0]) || 0, first_name: 'مدير', type: 'private' }); },
     getMe() { return Promise.resolve({ id: 42, is_bot: true, username: 'DeenCirclesBot', first_name: 'Deen Circles' }); },
+    sendDocument(...a) { calls.sendDocument.push(a); return Promise.resolve({ message_id: 901 }); },
+    sendPhoto(...a) { calls.sendPhoto.push(a); return Promise.resolve({ message_id: 902 }); },
+    sendVideo(...a) { calls.sendVideo.push(a); return Promise.resolve({ message_id: 903 }); },
+    sendAudio(...a) { calls.sendAudio.push(a); return Promise.resolve({ message_id: 904 }); },
     ...overrides,
   };
   return telegram;

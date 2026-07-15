@@ -155,6 +155,7 @@ create table if not exists homework (
   id bigserial primary key,
   group_id bigint not null references groups(id) on delete cascade,
   title text not null,
+  content text,
   source_message_id bigint,
   posted_by text,
   active boolean not null default true,
@@ -165,6 +166,24 @@ create table if not exists homework (
 create index if not exists idx_homework_group_active
   on homework (group_id, created_at)
   where active = true;
+
+-- One row per media file attached to a homework item's content (the teacher's
+-- assignment material: photo, voice/audio, video, or document). position orders
+-- files within an item (1-based). Hard-deleted with the item (cascade); the item
+-- itself is soft-deleted via homework.active. Mirrors class_material_files.
+create table if not exists homework_files (
+  id bigserial primary key,
+  homework_id bigint not null references homework(id) on delete cascade,
+  file_id text not null,
+  file_type text not null,
+  file_name text,
+  position integer not null default 1,
+  created_at timestamptz not null default now(),
+  check (file_type in ('document', 'photo', 'video', 'audio'))
+);
+
+create index if not exists idx_homework_files_homework
+  on homework_files (homework_id, position);
 
 -- One row per (homework, member). A row exists once the member has submitted;
 -- reviewed flips true when a homework teacher replies to the submission.

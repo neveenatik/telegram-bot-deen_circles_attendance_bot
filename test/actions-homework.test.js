@@ -308,12 +308,14 @@ test('group panel: a non-admin is rejected', async () => {
 function offlineStorage(overrides = {}) {
   return makeStorage({
     resolveManageableClass: async (gref) => ({ groupId: 'offline:o:1', rowId: Number(gref), role: 'owner', name: 'صف' }),
-    getHomework: async () => [{ id: 1, title: 'الدرس الأول', sourceMessageId: null, postedBy: null, createdAt: null }],
-    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس الأول', sourceMessageId: null, postedBy: null, createdAt: null }),
+    getHomework: async () => [{ id: 1, title: 'الدرس الأول', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [], fileCount: 0 }],
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس الأول', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [], fileCount: 0 }),
     getMembersWithIds: async () => [{ id: 7, name: 'فاطمة', userId: null, listNumber: 1 }, { id: 8, name: 'عائشة', userId: null, listNumber: 2 }],
     getSubmissions: async () => [],
     addHomework: async () => 2,
     removeHomework: async () => {},
+    addHomeworkFile: async () => 11,
+    setHomeworkContent: async () => {},
     setSubmissionState: async () => true,
     ...overrides,
   });
@@ -372,6 +374,92 @@ test('offline panel: item detail lists a toggle button per student', async () =>
   assert.ok(data.includes('o:hwtog:5:1:8'));
   assert.ok(data.includes('o:hwrm:5:1'));
   assert.ok(data.includes('o:hw:5'));
+});
+
+// ── Offline homework content (text body + attached media) ────────────────────
+
+test('offline panel: item detail exposes content buttons (set text + attach)', async () => {
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: offlineStorage(), telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  const data = editData(calls);
+  assert.ok(data.includes('o:hwtext:5:1'));
+  assert.ok(data.includes('o:hwatt:5:1'));
+  // No content yet → no "send content to me" button.
+  assert.ok(!data.includes('o:hwview:5:1'));
+});
+
+test('offline panel: item with content shows the view-content button', async () => {
+  const storage = offlineStorage({
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: 'اقرئي الصفحة', sourceMessageId: null, postedBy: null, createdAt: null, files: [{ id: 11, fileId: 'F1', fileType: 'photo', fileName: null, position: 1 }], fileCount: 1 }),
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:hwview:5:1'));
+});
+
+test('offline panel: set-text stores a homeworkContentText reply prompt', async () => {
+  const prompts = [];
+  const storage = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const telegram = makeTelegram();
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwtext:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkSetTextOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'homeworkContentText');
+  assert.equal(prompts[0].itemId, 1);
+  assert.equal(prompts[0].gref, '5');
+});
+
+test('offline panel: attach opens an upload session (prompt + session view)', async () => {
+  const prompts = [];
+  const storage = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwatt:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkAttachOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'homeworkContentUpload');
+  assert.equal(prompts[0].itemId, 1);
+  // Panel switched to the session view with a Done button.
+  assert.ok(editData(calls).some((cb) => cb.startsWith('o:hwattdone:5:1:')));
+});
+
+test('offline panel: view-content sends the text + media to the manager', async () => {
+  const storage = offlineStorage({
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: 'اقرئي الصفحة', sourceMessageId: null, postedBy: null, createdAt: null, files: [{ id: 11, fileId: 'F1', fileType: 'photo', fileName: null, position: 1 }], fileCount: 1 }),
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwview:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkViewContentOffline(ctx);
+
+  assert.equal(telegram.calls.sendMessage.length, 1); // text body
+  assert.equal(telegram.calls.sendPhoto.length, 1);   // one attachment
+  assert.equal(calls.answerCbQuery[0][0], HW.contentSentToast);
+});
+
+test('offline panel: view-content with no content answers a friendly toast', async () => {
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwview:5:1', '5', '1'] });
+  const h = createHandlers({ storage: offlineStorage(), telegram });
+
+  await h.homeworkViewContentOffline(ctx);
+
+  assert.equal(telegram.calls.sendMessage.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], HW.noContent);
 });
 
 test('offline panel: toggling an unsubmitted student records a submission (⬜️ → 📝)', async () => {
@@ -544,6 +632,69 @@ test('listener: an offline add-title reply creates the item and refreshes the pa
   assert.equal(added[0][1].title, 'الدرس الأول');
   assert.equal(added[0][1].sourceMessageId, null);
   assert.equal(telegram.calls.editMessageText.length, 1);
+});
+
+test('listener: a content-text reply saves the body and refreshes the item panel', async () => {
+  const saved = [];
+  let deleted = false;
+  const storage = listenerStorage({
+    getReplyPrompt: async () => ({ action: 'homeworkContentText', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 3, chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => { deleted = true; },
+    setHomeworkContent: async (g, id, body) => { saved.push([g, id, body]); },
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: 'اقرئي الصفحة', sourceMessageId: null, postedBy: null, createdAt: null, files: [], fileCount: 0 }),
+    getMembersWithIds: async () => [],
+    getSubmissions: async () => [],
+  });
+  const { telegram } = telegramRec();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = msgCtx({ chatType: 'private', chatId: 777, userId: OWNER, text: 'اقرئي الصفحة', replyToId: 600 });
+
+  let nextCalled = false;
+  await h.onHomeworkMessage(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(deleted, true);
+  assert.equal(saved.length, 1);
+  assert.deepEqual([saved[0][0], String(saved[0][1]), saved[0][2]], ['offline:o:1', '3', 'اقرئي الصفحة']);
+  assert.equal(telegram.calls.editMessageText.length, 1); // panel refreshed
+});
+
+test('listener: a content-upload media reply appends a file and re-arms the prompt', async () => {
+  const files = [];
+  const armed = [];
+  const storage = listenerStorage({
+    getReplyPrompt: async () => ({ action: 'homeworkContentUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 3, count: 0, chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    setReplyPrompt: async (_c, _m, rec) => { armed.push(rec); },
+    addHomeworkFile: async (id, f) => { files.push([id, f]); return 11; },
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [{ id: 11, fileId: 'PID', fileType: 'photo', fileName: null, position: 1 }], fileCount: 1 }),
+  });
+  const { telegram } = telegramRec();
+  const h = createHandlers({ storage, telegram });
+
+  // A photo message replying to the live upload prompt.
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER, first_name: 'T' },
+    message: { message_id: 601, reply_to_message: { message_id: 600 }, photo: [{ file_id: 'small' }, { file_id: 'PID' }] },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 610 }); },
+  };
+
+  let nextCalled = false;
+  await h.onHomeworkMessage(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(files.length, 1);
+  assert.equal(files[0][0], 3);                 // homework id
+  assert.equal(files[0][1].fileId, 'PID');      // largest photo size
+  assert.equal(files[0][1].fileType, 'photo');
+  assert.equal(calls.reply.length, 1);          // next prompt armed
+  assert.equal(armed.length, 1);
+  assert.equal(armed[0].action, 'homeworkContentUpload');
+  assert.equal(armed[0].count, 1);
+  assert.equal(telegram.calls.editMessageText.length, 1); // session view refreshed
 });
 
 test('listener: an unrelated private reply is passed through', async () => {
