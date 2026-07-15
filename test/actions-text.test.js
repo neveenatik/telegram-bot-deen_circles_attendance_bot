@@ -121,6 +121,40 @@ test('onText: materialRename renames the lesson and refreshes the item panel', a
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the item panel');
 });
 
+test('onText: materialFileRename renames the file and refreshes the files picker', async () => {
+  let renamed = null;
+  const pending = {
+    action: 'materialFileRename', groupId: 'offline:o:1', chatId: 777, msgId: 555,
+    surface: 'offline', token: '5', materialId: 1, fileId: 12, promptMsgId: 556, awaitingPrompt: false,
+  };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    renameMaterialFile: async (_g, mid, fid, name) => { renamed = { mid, fid, name }; },
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: 'مادة أولى', addedBy: null, createdAt: null,
+      files: [
+        { id: 11, fileId: 'FID1', fileType: 'document', fileName: 'أول.pdf', position: 1 },
+        { id: 12, fileId: 'FID2', fileType: 'photo', fileName: 'الوجه', position: 2 },
+      ],
+      fileCount: 2,
+    }),
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'الوجه' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.ok(renamed, 'renameMaterialFile was called');
+  assert.equal(renamed.mid, 1);
+  assert.equal(renamed.fid, 12);
+  assert.equal(renamed.name, 'الوجه');
+  // Two files remain → refreshes the files picker (not the item menu).
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the files picker');
+});
+
 test('onText: groupAddTeacher parses "userId | name | type", saves and refreshes the hub panel', async () => {
   let saved = null;
   const pending = { action: 'groupAddTeacher', groupId: '123', chatId: 42, msgId: 555, awaitingPrompt: false };

@@ -28,6 +28,7 @@ function matStorage(overrides = {}) {
     removeMaterial: async () => {},
     removeMaterialFile: async () => {},
     renameMaterial: async () => {},
+    renameMaterialFile: async () => {},
     ...overrides,
   });
 }
@@ -286,6 +287,67 @@ test('offline: refuses to delete every file at once', async () => {
 
   assert.equal(removed.length, 0);
   assert.equal(calls.answerCbQuery[0][0], MAT.cannotDeleteAllFiles);
+});
+
+// ── Per-file rename ─────────────────────────────────────────────────────────
+
+test('offline: files view offers a rename-selected action', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfiles:5:1', '5', '1'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFilesOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:matfren:5:1:0'));
+});
+
+test('offline: renaming one selected file arms a materialFileRename prompt for that file', async () => {
+  const prompts = [];
+  const storage = twoFileStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); } });
+  // Mask 2 → only file index 1 (the photo, id 12) is selected.
+  const { ctx, telegram } = makeCtx({ userId: OWNER, match: ['o:matfren:5:1:2', '5', '1', '2'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialFileRenameOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].rec.action, 'materialFileRename');
+  assert.equal(prompts[0].rec.surface, 'offline');
+  assert.equal(prompts[0].rec.token, '5');
+  assert.equal(prompts[0].rec.materialId, 1);
+  assert.equal(prompts[0].rec.fileId, 12);
+});
+
+test('offline: renaming refuses unless exactly one file is selected', async () => {
+  const prompts = [];
+  const storage = twoFileStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); } });
+  // Mask 3 → two files selected; mask 0 → none. Neither may rename.
+  const both = makeCtx({ userId: OWNER, match: ['o:matfren:5:1:3', '5', '1', '3'] });
+  const none = makeCtx({ userId: OWNER, match: ['o:matfren:5:1:0', '5', '1', '0'] });
+  const h = createHandlers({ storage, telegram: both.telegram });
+
+  await h.materialFileRenameOffline(both.ctx);
+  await h.materialFileRenameOffline(none.ctx);
+
+  assert.equal(prompts.length, 0);
+  assert.equal(both.calls.answerCbQuery[0][0], MAT.selectOne);
+  assert.equal(none.calls.answerCbQuery[0][0], MAT.selectOne);
+});
+
+test('group: renaming one selected file arms a materialFileRename prompt with chat token', async () => {
+  const prompts = [];
+  const storage = twoFileStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); } });
+  const { ctx, telegram } = makeCtx({ chatType: 'group', admin: true, chatId: 123, match: ['mg:matfren:123:1:1', '123', '1', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialFileRenameGroup(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].rec.action, 'materialFileRename');
+  assert.equal(prompts[0].rec.surface, 'group');
+  assert.equal(prompts[0].rec.token, '123');
+  assert.equal(prompts[0].rec.materialId, 1);
+  // Mask 1 → file index 0 (id 11).
+  assert.equal(prompts[0].rec.fileId, 11);
 });
 
 // ── Media capture (onMedia) ────────────────────────────────────────────────

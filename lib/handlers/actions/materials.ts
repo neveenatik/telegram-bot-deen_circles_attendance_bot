@@ -83,6 +83,7 @@ interface Storage {
   removeMaterial(groupId: string, id: string): Promise<void>;
   removeMaterialFile(groupId: string, materialId: number | string, fileId: number | string): Promise<void>;
   renameMaterial(groupId: string, id: string, title: string): Promise<void>;
+  renameMaterialFile(groupId: string, materialId: number | string, fileId: number | string, name: string): Promise<void>;
   resolveManageableClass(gref: string, userId: number | string): Promise<ManageableClass | null>;
 }
 
@@ -227,11 +228,12 @@ function materialSessionView(surface: Surface, token: string, count: number, pro
 // (bit i of the mask = file at index i); the two action buttons preview or
 // delete whichever files are checked. Selection is stateless — the mask rides
 // in the callback data. Opens with nothing selected so deletes are deliberate.
-function materialFilesView(surface: Surface, token: string, material: Material, mask: number) {
+export function materialFilesView(surface: Surface, token: string, material: Material, mask: number) {
   const id = material.id;
   const togBase = surface === 'group' ? `mg:matftog:${token}:${id}` : `o:matftog:${token}:${id}`;
   const prevCb = surface === 'group' ? `mg:matfprev:${token}:${id}:${mask}` : `o:matfprev:${token}:${id}:${mask}`;
   const rmCb = surface === 'group' ? `mg:matfrm:${token}:${id}:${mask}` : `o:matfrm:${token}:${id}:${mask}`;
+  const renCb = surface === 'group' ? `mg:matfren:${token}:${id}:${mask}` : `o:matfren:${token}:${id}:${mask}`;
   const backCb = surface === 'group' ? `mg:matit:${token}:${id}` : `o:matit:${token}:${id}`;
   const rows = material.files.map((f, i) => {
     const checked = (mask >> i) & 1;
@@ -243,6 +245,7 @@ function materialFilesView(surface: Surface, token: string, material: Material, 
     Markup.button.callback(MAT.previewSelectedButton, prevCb),
     Markup.button.callback(MAT.deleteSelectedButton, rmCb),
   ]);
+  rows.push([Markup.button.callback(MAT.renameSelectedButton, renCb)]);
   rows.push([Markup.button.callback(TEXT.backButton, backCb)]);
   rows.push(dismissRow());
   return { text: `${MAT.filesTitle(material.title)}\n\n${MAT.filesHint}`, keyboard: Markup.inlineKeyboard(rows) };
@@ -626,7 +629,29 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(MAT.filesRemovedToast(files.length));
   }
 
-  // ── Group /manage surface (mg:mat*) ────────────────────────────────────────
+  // Rename one selected file: exactly one file must be checked. The new name
+  // arrives as a text reply routed by text.js (action 'materialFileRename'),
+  // which rewrites the files picker.
+  async function materialFileRenameOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const mask = Number(m[3] ?? 0);
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const files = selectedFiles(material, mask);
+    if (files.length !== 1) { await ctx.answerCbQuery(MAT.selectOne); return; }
+    const file = files[0];
+    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
+    const currentName = file.fileName || MAT.fileFallback(material.files.indexOf(file) + 1);
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'materialFileRename', surface: 'offline', token: String(cls.rowId), materialId: material.id, fileId: file.id },
+      sendPrompt: () => ctx.reply(MAT.fileRenamePrompt(currentName), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
   // Tokens carry the Telegram chat id; isAdminOf gates against that group.
 
   async function authorizeGroup(ctx: Context): Promise<string | null> {
@@ -886,6 +911,27 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(MAT.filesRemovedToast(files.length));
   }
 
+  async function materialFileRenameGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const mask = Number(m[3] ?? 0);
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const files = selectedFiles(material, mask);
+    if (files.length !== 1) { await ctx.answerCbQuery(MAT.selectOne); return; }
+    const file = files[0];
+    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
+    const currentName = file.fileName || MAT.fileFallback(material.files.indexOf(file) + 1);
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId,
+      record: { action: 'materialFileRename', surface: 'group', token: groupId, materialId: material.id, fileId: file.id },
+      sendPrompt: () => ctx.reply(MAT.fileRenamePrompt(currentName), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
   // ── Media capture: files added to an active upload session ─────────────────
   //
   // A single force-reply prompt opens the session; the panel then shows a
@@ -1013,6 +1059,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialFilePreviewOffline,
     materialFileRemoveOffline,
     materialFileRemoveExecOffline,
+    materialFileRenameOffline,
     materialsGroup,
     materialAddGroup,
     materialFileAddGroup,
@@ -1030,6 +1077,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialFilePreviewGroup,
     materialFileRemoveGroup,
     materialFileRemoveExecGroup,
+    materialFileRenameGroup,
   };
 }
 
@@ -1055,6 +1103,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:matfprev:(\d+):(\d+):(\d+)$/, h.materialFilePreviewOffline);
   bot.action(/^o:matfrm:(\d+):(\d+):(\d+)$/, h.materialFileRemoveOffline);
   bot.action(/^o:matfrmx:(\d+):(\d+):(\d+)$/, h.materialFileRemoveExecOffline);
+  bot.action(/^o:matfren:(\d+):(\d+):(\d+)$/, h.materialFileRenameOffline);
 
   // Group /manage surface (Telegram chat id token, may be negative).
   bot.action(/^mg:mat:(-?\d+)$/, h.materialsGroup);
@@ -1074,4 +1123,5 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^mg:matfprev:(-?\d+):(\d+):(\d+)$/, h.materialFilePreviewGroup);
   bot.action(/^mg:matfrm:(-?\d+):(\d+):(\d+)$/, h.materialFileRemoveGroup);
   bot.action(/^mg:matfrmx:(-?\d+):(\d+):(\d+)$/, h.materialFileRemoveExecGroup);
+  bot.action(/^mg:matfren:(-?\d+):(\d+):(\d+)$/, h.materialFileRenameGroup);
 }
