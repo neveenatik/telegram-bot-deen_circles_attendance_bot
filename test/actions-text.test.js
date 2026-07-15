@@ -204,6 +204,31 @@ test('onText: groupRenameTrainingGroup renames by groupId and refreshes the menu
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the training-group menu');
 });
 
+test('onText: offlineAddTeacher (role-first) adds each plain name with the chosen role', async () => {
+  let received = null;
+  const pending = { action: 'offlineAddTeacher', groupId: 'offline:9:x', gref: 5, role: 'recitationteacher', chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    addOfflineTeachers: async (_g, entries) => { received = entries; return { added: entries.length }; },
+    getOfflineClassById: async () => ({ rowId: 5, groupId: 'offline:9:x', name: 'صف' }),
+    getTeachers: async () => [],
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: 'منال رجب\nآيه سمير\nنجمه احمد' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.deepEqual(received, [
+    { name: 'منال رجب', types: ['recitationteacher'] },
+    { name: 'آيه سمير', types: ['recitationteacher'] },
+    { name: 'نجمه احمد', types: ['recitationteacher'] },
+  ]);
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the teachers panel');
+});
+
 test('onText: offlineAddTrainingGroup adds a label and refreshes the panel', async () => {
   let addedName = null;
   const pending = { action: 'offlineAddTrainingGroup', groupId: 'offline:9:x', gref: 5, chatId: 42, msgId: 555, awaitingPrompt: false };

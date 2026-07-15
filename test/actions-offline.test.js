@@ -407,6 +407,28 @@ test('teachers: each teacher is a tappable button showing her type', async () =>
   assert.match(labels, /أمل/);
 });
 
+test('addTeacherPrompt: shows a role picker (bulk add by role)', async () => {
+  const { addTeacherPrompt } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:addteach:5', '5'] });
+  await addTeacherPrompt(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:addteachr:5:recitationteacher'));
+  assert.ok(data.includes('o:addteachr:5:courseteacher'));
+  assert.ok(data.includes('o:addteachr:5:trainingteacher'));
+  assert.ok(data.includes('o:addteachr:5:homeworkteacher'));
+});
+
+test('addTeacherNamesPrompt: force-reply awaiting names, carrying the chosen role', async () => {
+  let record = null;
+  const store = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { record = rec; } });
+  const { addTeacherNamesPrompt } = handlers(store);
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:addteachr:5:recitationteacher', '5', 'recitationteacher'] });
+  await addTeacherNamesPrompt(ctx);
+  assert.equal(record.action, 'offlineAddTeacher');
+  assert.equal(record.role, 'recitationteacher');
+  assert.equal(String(record.gref), '5');
+});
+
 test('teacherMenu: offers rename, change-type and remove', async () => {
   const { teacherMenu } = handlers(offlineStorage());
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tch:5:7', '5', '7'] });
