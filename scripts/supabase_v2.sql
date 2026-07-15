@@ -402,9 +402,6 @@ drop trigger if exists trg_processed_updates_updated_at on processed_updates;
 create trigger trg_processed_updates_updated_at
 before update on processed_updates
 for each row execute function touch_updated_at();
-create trigger trg_processed_updates_updated_at
-before update on processed_updates
-for each row execute function touch_updated_at();
 
 -- Auto-assign members.list_number on insert: next sequential number per group,
 -- unless one was supplied explicitly (e.g. the backfill script). Fires only on
