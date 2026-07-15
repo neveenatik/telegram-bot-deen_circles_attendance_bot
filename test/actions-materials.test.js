@@ -163,6 +163,8 @@ test('onMedia: first captioned file creates the lesson, appends the file, re-arm
   assert.equal(files[0].id, 2);
   assert.equal(files[0].f.fileId, 'FIDX');
   assert.equal(files[0].f.fileType, 'document');
+  // The caption names the file (and doubles as the lesson title on the first).
+  assert.equal(files[0].f.fileName, 'عنوان المادة');
   // A fresh prompt is armed carrying the new lesson id and running count.
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].rec.materialId, 2);
@@ -191,7 +193,27 @@ test('onMedia: a later file appends to the open lesson without a caption', async
   assert.equal(files.length, 1);
   assert.equal(files[0].id, 2);
   assert.equal(files[0].f.fileId, 'FIDY');
+  // No caption -> fall back to the attachment's own filename.
+  assert.equal(files[0].f.fileName, 'b.pdf');
   assert.equal(prompts[0].rec.count, 2);
+});
+
+test('onMedia: a later file caption becomes that file\'s name', async () => {
+  const files = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الدرس', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push(f); return 4; },
+    setReplyPrompt: async () => {},
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = mediaCtx({ caption: 'الوجه الثاني', document: { file_id: 'FIDZ', file_name: 'c.pdf' } });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(files.length, 1);
+  // Caption wins over the attachment filename.
+  assert.equal(files[0].fileName, 'الوجه الثاني');
 });
 
 test('onMedia: the largest photo size is captured', async () => {

@@ -666,8 +666,8 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   // The session chains fresh force-reply prompts: each file replies to the
   // current prompt; we append it, delete that prompt, and send the next one (so
   // Telegram auto-arms the reply box again). The first file's caption becomes
-  // the lesson title; later files just append. The admin ends the session via
-  // the Done button on the panel.
+  // the lesson title; every file's caption also names that file (falling back to
+  // the attachment filename). The admin ends the session via the Done button.
 
   async function onMedia(ctx: Context, next: () => Promise<void>): Promise<void> {
     const msg = ctx.message as UploadedMessage | undefined;
@@ -689,10 +689,13 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     let materialId = pending.materialId ?? null;
     let title = pending.title ?? null;
     let count = pending.count ?? 0;
+    // The caption typed on this file names the file itself (falling back to the
+    // attachment's own filename). On the first file it doubles as the lesson title.
+    const caption = (msg.caption ?? '').trim();
 
     if (!materialId) {
       // First file of a new lesson: its caption is the title.
-      title = (msg.caption ?? '').trim();
+      title = caption;
       if (!title) {
         // Keep the prompt open so she can resend with a caption.
         await replyEphemeral(ctx, MAT.noCaption);
@@ -712,7 +715,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await addMaterialFile(materialId, {
       fileId: file.fileId,
       fileType: file.fileType,
-      fileName: file.fileName,
+      fileName: caption || file.fileName,
     });
     count += 1;
 
