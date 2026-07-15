@@ -29,6 +29,7 @@ export function makeTelegram(overrides = {}) {
     sendPhoto: [],
     sendVideo: [],
     sendAudio: [],
+    sendVoice: [],
   };
   const telegram = {
     calls,
@@ -46,6 +47,7 @@ export function makeTelegram(overrides = {}) {
     sendPhoto(...a) { calls.sendPhoto.push(a); return Promise.resolve({ message_id: 902 }); },
     sendVideo(...a) { calls.sendVideo.push(a); return Promise.resolve({ message_id: 903 }); },
     sendAudio(...a) { calls.sendAudio.push(a); return Promise.resolve({ message_id: 904 }); },
+    sendVoice(...a) { calls.sendVoice.push(a); return Promise.resolve({ message_id: 905 }); },
     ...overrides,
   };
   return telegram;

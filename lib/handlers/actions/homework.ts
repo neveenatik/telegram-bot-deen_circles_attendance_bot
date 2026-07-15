@@ -71,6 +71,11 @@ interface Submission {
   memberId: number | null;
   memberName: string | null;
   submissionMessageId: number | null;
+  content: string | null;
+  fileId: string | null;
+  fileType: string | null;
+  teacherReply: string | null;
+  teacherReplyAt: string | null;
   submittedAt: string | null;
   reviewed: boolean;
   reviewedBy: string | null;
@@ -102,6 +107,7 @@ interface ReplyPromptRecord {
   groupId?: string;
   gref?: string;
   itemId?: number | string;
+  memberId?: number;
   count?: number;
   chatId?: number | string;
   msgId?: number;
@@ -132,6 +138,8 @@ interface Storage {
   markReviewedByMessage(submissionMessageId: number, reviewerUserId: number | string): Promise<boolean>;
   toggleReviewed(homeworkId: number, memberId: number, reviewerUserId?: number | string | null): Promise<boolean>;
   setSubmissionState(homeworkId: number, memberId: number, state: SubmissionState, actorUserId?: number | string | null): Promise<void>;
+  getSubmissionForMember(homeworkId: number, memberId: number): Promise<Submission | null>;
+  setTeacherReply(homeworkId: number, memberId: number, reply: string | null, reviewerUserId?: number | string | null): Promise<boolean>;
   // Rosters.
   getMaster(groupId: string): Promise<{ members: RosterMember[] }>;
   getMembersWithIds(groupId: string): Promise<MemberWithId[]>;
@@ -310,6 +318,11 @@ function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: Memb
   if (item.content || item.fileCount) {
     rows.push([Markup.button.callback(HW.viewContentButton, `o:hwview:${gref}:${item.id}`)]);
   }
+  // Student self-service submissions inbox (DM submissions carrying content).
+  const inboxCount = submissions.filter((s) => s.content || s.fileId).length;
+  if (inboxCount) {
+    rows.push([Markup.button.callback(HW.submissionsButton(inboxCount), `o:hwsubs:${gref}:${item.id}`)]);
+  }
   rows.push([Markup.button.callback(HW.removeButton, `o:hwrm:${gref}:${item.id}`)]);
   rows.push([Markup.button.callback(TEXT.backButton, `o:hw:${gref}`)]);
   rows.push(dismissRow());
@@ -342,6 +355,39 @@ function homeworkContentSessionView(gref: string, item: HomeworkItem, count: num
   ];
   const text = `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.attachCount(count)}`;
   return { text, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Teacher's inbox of student self-service DM submissions for one item: one row
+// per member who submitted content, tapping into a detail with a reply action.
+function homeworkSubmissionsView(gref: string, item: HomeworkItem, submissions: Submission[]) {
+  const withContent = submissions.filter((s) => (s.content || s.fileId) && s.memberId !== null);
+  const rows = withContent.map((s) => [Markup.button.callback(
+    clampButtonLabel(HW.submissionItem(marker(true, s.reviewed, s.resubmitted), s.memberName || '—')),
+    `o:hwsub:${gref}:${item.id}:${s.memberId}`,
+  )]);
+  rows.push([Markup.button.callback(TEXT.backButton, `o:hwit:${gref}:${item.id}`)]);
+  rows.push(dismissRow());
+  const body = withContent.length
+    ? HW.submissionsTitle(escapeTelegramMarkdown(item.title))
+    : `${HW.submissionsTitle(escapeTelegramMarkdown(item.title))}\n\n${HW.submissionsEmpty}`;
+  return { text: body, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// One student's submission detail (text shown inline; media sent separately by
+// the handler). Offers a reply-and-review action.
+function homeworkSubmissionDetailView(gref: string, item: HomeworkItem, sub: Submission, memberName: string) {
+  const lines = [
+    HW.submissionDetail(escapeTelegramMarkdown(memberName), escapeTelegramMarkdown(item.title)),
+    '',
+    sub.content ? HW.submissionText(escapeTelegramMarkdown(sub.content)) : HW.submissionNoContent,
+  ];
+  if (sub.teacherReply) lines.push('', HW.submissionText(escapeTelegramMarkdown(sub.teacherReply)));
+  const rows = [
+    [Markup.button.callback(HW.replyButton, `o:hwreply:${gref}:${item.id}:${sub.memberId}`)],
+    [Markup.button.callback(TEXT.backButton, `o:hwsubs:${gref}:${item.id}`)],
+    dismissRow(),
+  ];
+  return { text: lines.join('\n'), keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // One homework item's slice of the printable report: its counts plus a marker
@@ -397,6 +443,8 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     recordSubmission,
     markReviewedByMessage,
     setSubmissionState,
+    getSubmissionForMember,
+    setTeacherReply,
     getMaster,
     getMembersWithIds,
     findMemberByUserId,
@@ -567,6 +615,53 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
           logTelegramError('homework.content.upload.refreshPanel', err, {
             chatId: String(pending.chatId), messageId: pending.msgId,
           });
+        }
+        return;
+      }
+
+      if (pending.action === 'homeworkReply') {
+        const homeworkId = Number(pending.itemId);
+        const memberId = Number(pending.memberId);
+        const reply = (msg.text ?? '').trim();
+        await delReplyPrompt(chatKey, replyTo.message_id);
+        await setTeacherReply(homeworkId, memberId, reply, userId);
+
+        // Notify the student in her DM (best-effort).
+        let notified = false;
+        const members = await getMembersWithIds(pending.groupId);
+        const student = members.find((mm) => mm.id === memberId);
+        const item = await getHomeworkById(pending.groupId, String(homeworkId));
+        if (student?.userId) {
+          const cls = await resolveManageableClass(String(pending.gref ?? ''), userId);
+          try {
+            await telegram.sendMessage(
+              student.userId,
+              TEXT.studentHomework.notifyStudentReply(cls?.name ?? '', item?.title ?? '', reply),
+              { parse_mode: 'Markdown' },
+            );
+            notified = true;
+          } catch (err) {
+            logTelegramError('homework.reply.notify', err, { memberId });
+          }
+        }
+        await replyEphemeral(ctx, notified ? HW.replySaved : HW.replySavedNoNotify);
+
+        // Refresh the teacher's submission-detail panel.
+        if (pending.chatId !== undefined && pending.msgId !== undefined && item) {
+          const sub = await getSubmissionForMember(homeworkId, memberId);
+          if (sub) {
+            const memberName = student?.name ?? '';
+            const view = homeworkSubmissionDetailView(String(pending.gref ?? ''), item, sub, memberName);
+            try {
+              await telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
+                parse_mode: 'Markdown', ...view.keyboard,
+              });
+            } catch (err) {
+              logTelegramError('homework.reply.refreshPanel', err, {
+                chatId: String(pending.chatId), messageId: pending.msgId,
+              });
+            }
+          }
         }
         return;
       }
@@ -878,6 +973,75 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     }
   }
 
+  // Teacher's inbox of student DM submissions for one item.
+  async function homeworkSubmissionsOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    const submissions = await getSubmissions(item.id);
+    const view = homeworkSubmissionsView(String(cls.rowId), item, submissions);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // One student's submission detail: render the text inline and push any media
+  // file to the teacher's own chat, then offer a reply-and-review action.
+  async function homeworkSubmissionDetailOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const memberId = Number(m[3] ?? '');
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    const [sub, members] = await Promise.all([
+      getSubmissionForMember(item.id, memberId),
+      getMembersWithIds(cls.groupId),
+    ]);
+    if (!sub) { await ctx.answerCbQuery(HW.submissionsEmpty); return; }
+    const memberName = members.find((mm) => mm.id === memberId)?.name ?? '';
+    // Push the student's media (if any) to the teacher's own chat to inspect.
+    if (sub.fileId) {
+      const userId = ctx.from?.id;
+      if (userId !== undefined) {
+        try {
+          switch (sub.fileType) {
+            case 'photo': await telegram.sendPhoto(userId, sub.fileId); break;
+            case 'voice': await telegram.sendVoice(userId, sub.fileId); break;
+            case 'audio': await telegram.sendAudio(userId, sub.fileId); break;
+            case 'video': await telegram.sendVideo(userId, sub.fileId); break;
+            default: await telegram.sendDocument(userId, sub.fileId); break;
+          }
+        } catch (err) {
+          logTelegramError('homework.submission.sendMedia', err, { gref: String(cls.rowId), itemId: id });
+        }
+      }
+    }
+    const view = homeworkSubmissionDetailView(String(cls.rowId), item, sub, memberName);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // Arm a force-reply to collect the teacher's feedback (captured by
+  // onHomeworkMessage, action 'homeworkReply').
+  async function homeworkReplyOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const memberId = Number(m[3] ?? '');
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'homeworkReply', surface: 'offline', gref: String(cls.rowId), itemId: item.id, memberId },
+      sendPrompt: () => ctx.reply(HW.replyPrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
   // Cycle one student's state: ⬜️ → 📝 (submit) → ✅ (review) → 🔁 (resubmit) → ⬜️.
   async function homeworkToggleOffline(ctx: Context): Promise<void> {
     const cls = await resolveOffline(ctx);
@@ -959,6 +1123,9 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     homeworkAttachOffline,
     homeworkAttachDoneOffline,
     homeworkViewContentOffline,
+    homeworkSubmissionsOffline,
+    homeworkSubmissionDetailOffline,
+    homeworkReplyOffline,
     homeworkToggleOffline,
     homeworkReportOffline,
     homeworkRemoveOffline,
@@ -986,6 +1153,9 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:hwatt:(\d+):(\d+)$/, h.homeworkAttachOffline);
   bot.action(/^o:hwattdone:(\d+):(\d+):(\d+)$/, h.homeworkAttachDoneOffline);
   bot.action(/^o:hwview:(\d+):(\d+)$/, h.homeworkViewContentOffline);
+  bot.action(/^o:hwsubs:(\d+):(\d+)$/, h.homeworkSubmissionsOffline);
+  bot.action(/^o:hwsub:(\d+):(\d+):(\d+)$/, h.homeworkSubmissionDetailOffline);
+  bot.action(/^o:hwreply:(\d+):(\d+):(\d+)$/, h.homeworkReplyOffline);
   bot.action(/^o:hwtog:(\d+):(\d+):(\d+)$/, h.homeworkToggleOffline);
   bot.action(/^o:hwrep:(\d+)$/, h.homeworkReportOffline);
   bot.action(/^o:hwrm:(\d+):(\d+)$/, h.homeworkRemoveOffline);

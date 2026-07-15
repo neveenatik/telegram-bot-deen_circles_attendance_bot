@@ -317,6 +317,8 @@ function offlineStorage(overrides = {}) {
     addHomeworkFile: async () => 11,
     setHomeworkContent: async () => {},
     setSubmissionState: async () => true,
+    getSubmissionForMember: async () => null,
+    setTeacherReply: async () => true,
     ...overrides,
   });
 }
@@ -460,6 +462,92 @@ test('offline panel: view-content with no content answers a friendly toast', asy
 
   assert.equal(telegram.calls.sendMessage.length, 0);
   assert.equal(calls.answerCbQuery[0][0], HW.noContent);
+});
+
+// ── Teacher-side student submissions inbox + reply ───────────────────────────
+
+const dmSub = (over = {}) => ({
+  id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null,
+  content: 'أنجزت الواجب', fileId: null, fileType: null, teacherReply: null, teacherReplyAt: null,
+  submittedAt: null, reviewed: false, reviewedBy: null, reviewedAt: null, resubmitted: false, resubmittedAt: null,
+  ...over,
+});
+
+test('offline panel: item detail shows a submissions button when a student submitted via DM', async () => {
+  const storage = offlineStorage({ getSubmissions: async () => [dmSub()] });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:hwsubs:5:1'));
+});
+
+test('offline submissions inbox: lists members who submitted content', async () => {
+  const storage = offlineStorage({ getSubmissions: async () => [dmSub()] });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwsubs:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkSubmissionsOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:hwsub:5:1:7'));
+});
+
+test('offline submission detail: pushes media and offers a reply button', async () => {
+  const storage = offlineStorage({
+    getSubmissionForMember: async () => dmSub({ fileId: 'PIC', fileType: 'photo' }),
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwsub:5:1:7', '5', '1', '7'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkSubmissionDetailOffline(ctx);
+
+  assert.equal(telegram.calls.sendPhoto.length, 1);
+  assert.ok(editData(calls).includes('o:hwreply:5:1:7'));
+  assert.match(calls.editMessageText[0][0], /أنجزت الواجب/);
+});
+
+test('offline reply: stores a homeworkReply prompt', async () => {
+  const prompts = [];
+  const storage = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const telegram = makeTelegram();
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwreply:5:1:7', '5', '1', '7'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReplyOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'homeworkReply');
+  assert.equal(prompts[0].itemId, 1);
+  assert.equal(prompts[0].memberId, 7);
+});
+
+test('listener: a homeworkReply reply stores feedback and DMs the student', async () => {
+  const replies = [];
+  const storage = offlineStorage({
+    getReplyPrompt: async () => ({ action: 'homeworkReply', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 1, memberId: 7, chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    setTeacherReply: async (...a) => { replies.push(a); return true; },
+    getMembersWithIds: async () => [{ id: 7, name: 'فاطمة', userId: '2002', listNumber: 1 }],
+    getSubmissionForMember: async () => dmSub({ reviewed: true, teacherReply: 'أحسنتِ' }),
+  });
+  const { telegram } = telegramRec();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = msgCtx({ chatType: 'private', chatId: 777, userId: OWNER, text: 'أحسنتِ', replyToId: 600 });
+
+  let nextCalled = false;
+  await h.onHomeworkMessage(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0][0], 1); // homework id
+  assert.equal(replies[0][1], 7); // member id
+  assert.equal(replies[0][2], 'أحسنتِ');
+  // Student (user 2002) notified.
+  assert.equal(telegram.calls.sendMessage.filter((m) => m[0] === '2002').length, 1);
 });
 
 test('offline panel: toggling an unsubmitted student records a submission (⬜️ → 📝)', async () => {

@@ -188,12 +188,19 @@ create index if not exists idx_homework_files_homework
 -- One row per (homework, member). A row exists once the member has submitted;
 -- reviewed flips true when a homework teacher replies to the submission.
 -- resubmitted flips true when the member submits again after a review (awaiting
--- re-review); a fresh review clears it.
+-- re-review); a fresh review clears it. content/file_id/file_type hold a
+-- student's self-service DM submission (text and/or a single media file);
+-- teacher_reply holds the reviewer's feedback the student sees back.
 create table if not exists homework_submissions (
   id bigserial primary key,
   homework_id bigint not null references homework(id) on delete cascade,
   member_id bigint references members(id) on delete set null,
   submission_message_id bigint,
+  content text,
+  file_id text,
+  file_type text,
+  teacher_reply text,
+  teacher_reply_at timestamptz,
   submitted_at timestamptz not null default now(),
   reviewed boolean not null default false,
   reviewed_by text,
