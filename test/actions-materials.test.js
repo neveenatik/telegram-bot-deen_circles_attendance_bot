@@ -9,17 +9,22 @@ const MAT = TEXT.materials;
 const OWNER = 1001;
 
 // Storage stub with the materials + class-resolution methods the handlers use.
-// Defaults to an owner with one document material; override per test.
+// Defaults to an owner with one lesson holding a single document file.
 function matStorage(overrides = {}) {
   return makeStorage({
     resolveManageableClass: async (gref) => ({ groupId: 'offline:o:1', rowId: Number(gref), role: 'owner', name: 'صف' }),
     getMaterials: async () => [
-      { id: 1, title: 'مادة أولى', fileId: 'FID1', fileType: 'document', fileName: null, addedBy: null, createdAt: null },
+      {
+        id: 1, title: 'مادة أولى', addedBy: null, createdAt: null,
+        files: [{ id: 11, fileId: 'FID1', fileType: 'document', fileName: null, position: 1 }], fileCount: 1,
+      },
     ],
     getMaterialById: async (_g, id) => ({
-      id: Number(id), title: 'مادة أولى', fileId: 'FID1', fileType: 'document', fileName: null, addedBy: null, createdAt: null,
+      id: Number(id), title: 'مادة أولى', addedBy: null, createdAt: null,
+      files: [{ id: 11, fileId: 'FID1', fileType: 'document', fileName: null, position: 1 }], fileCount: 1,
     }),
     addMaterial: async () => 2,
+    addMaterialFile: async () => 3,
     removeMaterial: async () => {},
     ...overrides,
   });
@@ -133,11 +138,15 @@ test('offline: confirming removal deletes and re-renders the list', async () => 
 
 // ── Media capture (onMedia) ────────────────────────────────────────────────
 
-test('onMedia: a captioned document reply adds a material and refreshes the panel', async () => {
+test('onMedia: first captioned file creates the lesson, appends the file, re-arms', async () => {
   const added = [];
+  const files = [];
+  const prompts = [];
   const storage = matStorage({
-    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555 }),
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: null, count: 0 }),
     addMaterial: async (g, m) => { added.push({ g, m }); return 2; },
+    addMaterialFile: async (id, f) => { files.push({ id, f }); return 3; },
+    setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); },
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
@@ -148,18 +157,48 @@ test('onMedia: a captioned document reply adds a material and refreshes the pane
 
   assert.equal(nextCalled, false);
   assert.equal(added.length, 1);
-  assert.equal(added[0].g, 'offline:o:1');
   assert.equal(added[0].m.title, 'عنوان المادة');
-  assert.equal(added[0].m.fileId, 'FIDX');
-  assert.equal(added[0].m.fileType, 'document');
+  assert.equal(files.length, 1);
+  assert.equal(files[0].id, 2);
+  assert.equal(files[0].f.fileId, 'FIDX');
+  assert.equal(files[0].f.fileType, 'document');
+  // A fresh prompt is armed carrying the new lesson id and running count.
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].rec.materialId, 2);
+  assert.equal(prompts[0].rec.count, 1);
+  // The panel is refreshed to the session view.
   assert.equal(telegram.calls.editMessageText.length, 1);
 });
 
-test('onMedia: the largest photo size is captured', async () => {
+test('onMedia: a later file appends to the open lesson without a caption', async () => {
   const added = [];
+  const files = [];
+  const prompts = [];
   const storage = matStorage({
-    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'group', groupId: '123', chatId: 123, msgId: 555 }),
-    addMaterial: async (g, m) => { added.push(m); return 3; },
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'عنوان المادة', count: 1 }),
+    addMaterial: async (g, m) => { added.push({ g, m }); return 99; },
+    addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); },
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = mediaCtx({ caption: '', document: { file_id: 'FIDY', file_name: 'b.pdf' } });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(added.length, 0, 'existing lesson is not re-created');
+  assert.equal(files.length, 1);
+  assert.equal(files[0].id, 2);
+  assert.equal(files[0].f.fileId, 'FIDY');
+  assert.equal(prompts[0].rec.count, 2);
+});
+
+test('onMedia: the largest photo size is captured', async () => {
+  const files = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'group', groupId: '123', chatId: 123, msgId: 555, materialId: null, count: 0 }),
+    addMaterial: async () => 3,
+    addMaterialFile: async (id, f) => { files.push(f); return 5; },
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
@@ -171,16 +210,16 @@ test('onMedia: the largest photo size is captured', async () => {
 
   await h.onMedia(ctx, async () => {});
 
-  assert.equal(added.length, 1);
-  assert.equal(added[0].fileId, 'large');
-  assert.equal(added[0].fileType, 'photo');
+  assert.equal(files.length, 1);
+  assert.equal(files[0].fileId, 'large');
+  assert.equal(files[0].fileType, 'photo');
 });
 
-test('onMedia: a file with no caption is rejected and the prompt stays open', async () => {
+test('onMedia: a first file with no caption is rejected and the prompt stays open', async () => {
   let deleted = false;
   let added = 0;
   const storage = matStorage({
-    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555 }),
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: null, count: 0 }),
     delReplyPrompt: async () => { deleted = true; },
     addMaterial: async () => { added += 1; return 1; },
   });
@@ -216,6 +255,81 @@ test('onMedia: media that is not a reply is passed through', async () => {
   await h.onMedia(ctx, async () => { nextCalled = true; });
 
   assert.equal(nextCalled, true);
+});
+
+// ── Add files to an existing lesson + finishing a session ───────────────────
+
+test('offline: add-file opens a session preset to the existing lesson', async () => {
+  const prompts = [];
+  const storage = matStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push(rec); } });
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfadd:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialFileAddOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'materialUpload');
+  assert.equal(prompts[0].materialId, 1);
+  assert.equal(prompts[0].count, 1);
+  // Panel becomes the session view with a Done button carrying the prompt id.
+  const data = editData(calls);
+  assert.ok(data.some((cb) => cb.startsWith('o:matdone:5:')));
+});
+
+test('offline: item menu offers an add-file button', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: matStorage(), telegram });
+
+  await h.materialItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:matfadd:5:1'));
+});
+
+test('offline: done closes the session prompt and re-renders the list', async () => {
+  const deleted = [];
+  const storage = matStorage({ delReplyPrompt: async (chatId, msgId) => { deleted.push([chatId, msgId]); } });
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, chatId: 777, match: ['o:matdone:5:901', '5', '901'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialDoneOffline(ctx);
+
+  assert.deepEqual(deleted, [['777', 901]]);
+  assert.ok(editData(calls).includes('o:matadd:5'));
+});
+
+test('group: done closes the session prompt and re-renders the list', async () => {
+  const deleted = [];
+  const storage = matStorage({ delReplyPrompt: async (chatId, msgId) => { deleted.push([chatId, msgId]); } });
+  const { telegram } = telegramWithSend();
+  const { ctx, calls } = makeCtx({ chatType: 'group', admin: true, chatId: 123, match: ['mg:matdone:123:901', '123', '901'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialDoneGroup(ctx);
+
+  assert.deepEqual(deleted, [['123', 901]]);
+  assert.ok(editData(calls).includes('mg:matadd:123'));
+});
+
+test('offline: sending a lesson with several files resends each in order', async () => {
+  const { telegram, sent } = telegramWithSend();
+  const storage = matStorage({
+    getMaterialById: async () => ({
+      id: 1, title: 'درس', addedBy: null, createdAt: null, fileCount: 2,
+      files: [
+        { id: 11, fileId: 'F1', fileType: 'document', fileName: null, position: 1 },
+        { id: 12, fileId: 'F2', fileType: 'photo', fileName: null, position: 2 },
+      ],
+    }),
+  });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:matget:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialGetOffline(ctx);
+
+  assert.equal(sent.sendDocument.length, 1);
+  assert.equal(sent.sendDocument[0][1], 'F1');
+  assert.equal(sent.sendPhoto.length, 1);
+  assert.equal(sent.sendPhoto[0][1], 'F2');
 });
 
 // ── Group /manage surface ──────────────────────────────────────────────────

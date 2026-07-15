@@ -21,22 +21,27 @@ const MAT = TEXT.materials;
 type Surface = 'offline' | 'group';
 type FileType = 'document' | 'photo' | 'video' | 'audio';
 
-interface Material {
-  id: number;
-  title: string;
+interface NewMaterialFile {
   fileId: string;
   fileType: FileType;
   fileName: string | null;
-  addedBy: string | null;
-  createdAt: string | null;
+}
+
+interface MaterialFile extends NewMaterialFile {
+  id: number;
+  position: number;
 }
 
 interface NewMaterial {
   title: string;
-  fileId: string;
-  fileType: FileType;
-  fileName: string | null;
   addedBy: string | null;
+}
+
+interface Material extends NewMaterial {
+  id: number;
+  createdAt: string | null;
+  files: MaterialFile[];
+  fileCount: number;
 }
 
 interface ManageableClass {
@@ -52,6 +57,11 @@ interface ReplyPromptRecord {
   surface?: Surface;
   groupId?: string;
   gref?: string;
+  // Upload-session state: the lesson being filled (null until the first file
+  // creates it), its title, and how many files have been added so far.
+  materialId?: number | null;
+  title?: string | null;
+  count?: number;
   chatId?: number | string;
   msgId?: number;
   [key: string]: unknown;
@@ -64,6 +74,7 @@ interface Storage {
   getMaterials(groupId: string): Promise<Material[]>;
   getMaterialById(groupId: string, id: string): Promise<Material | null>;
   addMaterial(groupId: string, material: NewMaterial): Promise<number | null>;
+  addMaterialFile(materialId: number, file: NewMaterialFile): Promise<number | null>;
   removeMaterial(groupId: string, id: string): Promise<void>;
   resolveManageableClass(gref: string, userId: number | string): Promise<ManageableClass | null>;
 }
@@ -130,7 +141,8 @@ function materialsListView(surface: Surface, token: string, materials: Material[
   const rows = [[Markup.button.callback(MAT.addButton, addCb)]];
   for (const m of list) {
     const itemCb = surface === 'group' ? `mg:matit:${token}:${m.id}` : `o:matit:${token}:${m.id}`;
-    rows.push([Markup.button.callback(clampButtonLabel(m.title), itemCb)]);
+    const label = `${m.title} · ${MAT.fileCountLabel(m.fileCount)}`;
+    rows.push([Markup.button.callback(clampButtonLabel(label), itemCb)]);
   }
   rows.push([Markup.button.callback(TEXT.backButton, backCb)]);
   rows.push(dismissRow());
@@ -143,15 +155,31 @@ function materialMenuView(surface: Surface, token: string, material: Material) {
   const sendBtn = surface === 'group'
     ? Markup.button.callback(MAT.sendToGroupButton, `mg:matsend:${token}:${id}`)
     : Markup.button.callback(MAT.sendToMeButton, `o:matget:${token}:${id}`);
+  const addFileCb = surface === 'group' ? `mg:matfadd:${token}:${id}` : `o:matfadd:${token}:${id}`;
   const rmCb = surface === 'group' ? `mg:matrm:${token}:${id}` : `o:matrm:${token}:${id}`;
   const backCb = surface === 'group' ? `mg:mat:${token}` : `o:mat:${token}`;
   const rows = [
     [sendBtn],
+    [Markup.button.callback(MAT.addFileButton, addFileCb)],
     [Markup.button.callback(MAT.removeButton, rmCb)],
     [Markup.button.callback(TEXT.backButton, backCb)],
     dismissRow(),
   ];
-  return { text: MAT.itemMenuTitle(material.title), keyboard: Markup.inlineKeyboard(rows) };
+  return { text: MAT.itemMenuTitle(material.title, material.fileCount), keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Shown on the panel while an upload session is active. The Done button carries
+// the live force-reply prompt's message id so tapping it closes that prompt.
+function materialSessionView(surface: Surface, token: string, count: number, promptMsgId: number, title: string | null) {
+  const doneCb = surface === 'group'
+    ? `mg:matdone:${token}:${promptMsgId}`
+    : `o:matdone:${token}:${promptMsgId}`;
+  const heading = title ? MAT.sessionTitle(title) : MAT.title;
+  const rows = [
+    [Markup.button.callback(MAT.doneButton, doneCb)],
+    dismissRow(),
+  ];
+  return { text: `${heading}\n\n${MAT.sessionCount(count)}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 function materialRemoveConfirmView(surface: Surface, token: string, material: Material) {
@@ -174,26 +202,63 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     getMaterials,
     getMaterialById,
     addMaterial,
+    addMaterialFile,
     removeMaterial,
     resolveManageableClass,
   } = storage;
 
-  // Resend a stored material by file_id, dispatching on its type.
+  // Resend a stored lesson by sending each of its files (in order) by file_id.
+  // The lesson title rides as the caption on the first file only.
   async function sendMaterial(chatId: string | number, material: Material): Promise<void> {
-    const extra = { caption: MAT.caption(material.title), parse_mode: 'Markdown' as const };
-    switch (material.fileType) {
-      case 'document':
-        await telegram.sendDocument(chatId, material.fileId, extra);
-        return;
-      case 'photo':
-        await telegram.sendPhoto(chatId, material.fileId, extra);
-        return;
-      case 'video':
-        await telegram.sendVideo(chatId, material.fileId, extra);
-        return;
-      case 'audio':
-        await telegram.sendAudio(chatId, material.fileId, extra);
-        return;
+    const files = Array.isArray(material.files) ? material.files : [];
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      if (!file) continue;
+      const extra = i === 0
+        ? { caption: MAT.caption(material.title), parse_mode: 'Markdown' as const }
+        : {};
+      switch (file.fileType) {
+        case 'document':
+          await telegram.sendDocument(chatId, file.fileId, extra);
+          break;
+        case 'photo':
+          await telegram.sendPhoto(chatId, file.fileId, extra);
+          break;
+        case 'video':
+          await telegram.sendVideo(chatId, file.fileId, extra);
+          break;
+        case 'audio':
+          await telegram.sendAudio(chatId, file.fileId, extra);
+          break;
+      }
+    }
+  }
+
+  // Open an upload session: send a fresh force-reply prompt and switch the panel
+  // to the session view (with a Done button pointing at that prompt). Files the
+  // admin replies with are captured by onMedia, which re-arms the next prompt.
+  async function beginUploadSession(
+    ctx: Context,
+    opts: { surface: Surface; token: string; groupId: string; gref?: string; materialId: number | null; title: string | null; count: number; promptText: string },
+  ): Promise<void> {
+    const prompt = await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: opts.groupId,
+      record: {
+        action: 'materialUpload',
+        surface: opts.surface,
+        gref: opts.gref,
+        materialId: opts.materialId,
+        title: opts.title,
+        count: opts.count,
+      },
+      sendPrompt: () => ctx.reply(opts.promptText, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+    const view = materialSessionView(opts.surface, opts.token, opts.count, prompt.message_id, opts.title);
+    try {
+      await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    } catch (err) {
+      logTelegramError('materials.session.begin', err, { surface: opts.surface, token: opts.token });
     }
   }
 
@@ -221,12 +286,46 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   async function materialAddOffline(ctx: Context): Promise<void> {
     const cls = await resolveOffline(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
-    await beginForceReplyAwaiting(ctx, {
-      setReplyPrompt,
+    await beginUploadSession(ctx, {
+      surface: 'offline',
+      token: String(cls.rowId),
       groupId: cls.groupId,
-      record: { action: 'materialUpload', surface: 'offline', gref: String(cls.rowId) },
-      sendPrompt: () => ctx.reply(MAT.addPrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+      gref: String(cls.rowId),
+      materialId: null,
+      title: null,
+      count: 0,
+      promptText: MAT.addPrompt,
     });
+  }
+
+  // Option 3: add more files to an existing lesson (title already set).
+  async function materialFileAddOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    await beginUploadSession(ctx, {
+      surface: 'offline',
+      token: String(cls.rowId),
+      groupId: cls.groupId,
+      gref: String(cls.rowId),
+      materialId: material.id,
+      title: material.title,
+      count: material.fileCount,
+      promptText: MAT.addFilePrompt,
+    });
+  }
+
+  async function materialDoneOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const promptMsgId = Number(readMatch(ctx)[2] ?? 0);
+    if (promptMsgId && ctx.chat) await delReplyPrompt(String(ctx.chat.id), promptMsgId);
+    const list = await getMaterials(cls.groupId);
+    const view = materialsListView('offline', String(cls.rowId), list);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
   }
 
   async function materialItemOffline(ctx: Context): Promise<void> {
@@ -246,6 +345,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const id = readMatch(ctx)[2] ?? '';
     const material = await getMaterialById(cls.groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
     const userId = ctx.from?.id;
     if (userId === undefined) return;
     try {
@@ -303,12 +403,44 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   async function materialAddGroup(ctx: Context): Promise<void> {
     const groupId = await authorizeGroup(ctx);
     if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
-    await beginForceReplyAwaiting(ctx, {
-      setReplyPrompt,
+    await beginUploadSession(ctx, {
+      surface: 'group',
+      token: groupId,
       groupId,
-      record: { action: 'materialUpload', surface: 'group' },
-      sendPrompt: () => ctx.reply(MAT.addPrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+      materialId: null,
+      title: null,
+      count: 0,
+      promptText: MAT.addPrompt,
     });
+  }
+
+  // Option 3: add more files to an existing lesson (title already set).
+  async function materialFileAddGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    await beginUploadSession(ctx, {
+      surface: 'group',
+      token: groupId,
+      groupId,
+      materialId: material.id,
+      title: material.title,
+      count: material.fileCount,
+      promptText: MAT.addFilePrompt,
+    });
+  }
+
+  async function materialDoneGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const promptMsgId = Number(readMatch(ctx)[2] ?? 0);
+    if (promptMsgId && ctx.chat) await delReplyPrompt(String(ctx.chat.id), promptMsgId);
+    const list = await getMaterials(groupId);
+    const view = materialsListView('group', groupId, list);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
   }
 
   async function materialItemGroup(ctx: Context): Promise<void> {
@@ -328,6 +460,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const id = readMatch(ctx)[2] ?? '';
     const material = await getMaterialById(groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
     try {
       await sendMaterial(groupId, material);
       await ctx.answerCbQuery(MAT.sentToGroup);
@@ -360,7 +493,13 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(material ? MAT.removedToast(material.title) : undefined);
   }
 
-  // ── Media capture: a file replying to an "add material" prompt ─────────────
+  // ── Media capture: a file replying to an upload-session prompt ─────────────
+  //
+  // The session chains fresh force-reply prompts: each file replies to the
+  // current prompt; we append it, delete that prompt, and send the next one (so
+  // Telegram auto-arms the reply box again). The first file's caption becomes
+  // the lesson title; later files just append. The admin ends the session via
+  // the Done button on the panel.
 
   async function onMedia(ctx: Context, next: () => Promise<void>): Promise<void> {
     const msg = ctx.message as UploadedMessage | undefined;
@@ -378,29 +517,62 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       return;
     }
 
-    const title = (msg.caption ?? '').trim();
-    if (!title) {
-      // Keep the prompt open so she can resend with a caption.
-      await replyEphemeral(ctx, MAT.noCaption);
-      return;
+    const groupId = pending.groupId;
+    let materialId = pending.materialId ?? null;
+    let title = pending.title ?? null;
+    let count = pending.count ?? 0;
+
+    if (!materialId) {
+      // First file of a new lesson: its caption is the title.
+      title = (msg.caption ?? '').trim();
+      if (!title) {
+        // Keep the prompt open so she can resend with a caption.
+        await replyEphemeral(ctx, MAT.noCaption);
+        return;
+      }
+      materialId = await addMaterial(groupId, {
+        title,
+        addedBy: ctx.from ? String(ctx.from.id) : null,
+      });
+      if (!materialId) {
+        await delReplyPrompt(chatKey, promptMsgId);
+        await replyEphemeral(ctx, MAT.sendFailed);
+        return;
+      }
     }
 
-    await delReplyPrompt(chatKey, promptMsgId);
-    await addMaterial(pending.groupId, {
-      title,
+    await addMaterialFile(materialId, {
       fileId: file.fileId,
       fileType: file.fileType,
       fileName: file.fileName,
-      addedBy: ctx.from ? String(ctx.from.id) : null,
     });
-    await replyEphemeral(ctx, MAT.added(title), { parse_mode: 'Markdown' });
+    count += 1;
 
-    // Refresh the originating panel back to the (now longer) materials list.
+    // Rotate the prompt: retire the one just replied to, arm the next.
+    await delReplyPrompt(chatKey, promptMsgId);
+    const nextPrompt = await ctx.reply(MAT.addMorePrompt, {
+      parse_mode: 'Markdown',
+      reply_markup: { force_reply: true },
+    });
+    await setReplyPrompt(chatKey, nextPrompt.message_id, {
+      action: 'materialUpload',
+      surface: pending.surface,
+      gref: pending.gref,
+      groupId,
+      materialId,
+      title,
+      count,
+      userId: pending.userId,
+      chatId: pending.chatId,
+      msgId: pending.msgId,
+    });
+
+    // Refresh the originating panel to the session view (running count + Done
+    // button pointing at the freshly-armed prompt).
     if (pending.chatId === undefined || pending.msgId === undefined) return;
     const surface: Surface = pending.surface === 'group' ? 'group' : 'offline';
-    const token = surface === 'group' ? String(pending.groupId) : String(pending.gref ?? '');
-    const list = await getMaterials(pending.groupId);
-    const view = materialsListView(surface, token, list);
+    const token = surface === 'group' ? String(groupId) : String(pending.gref ?? '');
+    const view = materialSessionView(surface, token, count, nextPrompt.message_id, title);
     try {
       await telegram.editMessageText(
         pending.chatId, pending.msgId, undefined,
@@ -418,12 +590,16 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     onMedia,
     materialsOffline,
     materialAddOffline,
+    materialFileAddOffline,
+    materialDoneOffline,
     materialItemOffline,
     materialGetOffline,
     materialRemoveOffline,
     materialRemoveExecOffline,
     materialsGroup,
     materialAddGroup,
+    materialFileAddGroup,
+    materialDoneGroup,
     materialItemGroup,
     materialSendGroup,
     materialRemoveGroup,
@@ -438,6 +614,8 @@ export function register(bot: BotLike, storage: Storage): void {
   // Offline class surface (numeric gref token).
   bot.action(/^o:mat:(\d+)$/, h.materialsOffline);
   bot.action(/^o:matadd:(\d+)$/, h.materialAddOffline);
+  bot.action(/^o:matfadd:(\d+):(\d+)$/, h.materialFileAddOffline);
+  bot.action(/^o:matdone:(\d+):(\d+)$/, h.materialDoneOffline);
   bot.action(/^o:matit:(\d+):(\d+)$/, h.materialItemOffline);
   bot.action(/^o:matget:(\d+):(\d+)$/, h.materialGetOffline);
   bot.action(/^o:matrm:(\d+):(\d+)$/, h.materialRemoveOffline);
@@ -446,6 +624,8 @@ export function register(bot: BotLike, storage: Storage): void {
   // Group /manage surface (Telegram chat id token, may be negative).
   bot.action(/^mg:mat:(-?\d+)$/, h.materialsGroup);
   bot.action(/^mg:matadd:(-?\d+)$/, h.materialAddGroup);
+  bot.action(/^mg:matfadd:(-?\d+):(\d+)$/, h.materialFileAddGroup);
+  bot.action(/^mg:matdone:(-?\d+):(\d+)$/, h.materialDoneGroup);
   bot.action(/^mg:matit:(-?\d+):(\d+)$/, h.materialItemGroup);
   bot.action(/^mg:matsend:(-?\d+):(\d+)$/, h.materialSendGroup);
   bot.action(/^mg:matrm:(-?\d+):(\d+)$/, h.materialRemoveGroup);

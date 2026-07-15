@@ -108,27 +108,42 @@ create table if not exists class_managers (
 create index if not exists idx_class_managers_user_id
   on class_managers (user_id);
 
--- Teaching materials: files (documents/photos/videos/audio) an admin or operator
--- uploads for a class. We store only Telegram's file_id (Telegram hosts the
--- bytes); the same file_id is reused to resend the file to the group (live) or
--- back to the uploader's DM (offline). Scoped to a class and cascades on delete.
+-- Teaching materials: a "material" is a lesson (a title) that owns one or more
+-- files (documents/photos/videos/audio) an admin or operator uploads for a
+-- class. The lesson lives here; its files live in class_material_files. We store
+-- only Telegram's file_id (Telegram hosts the bytes); the same file_id is reused
+-- to resend the files to the group (live) or back to the uploader's DM (offline).
+-- Scoped to a class and cascades on delete.
 create table if not exists class_materials (
   id bigserial primary key,
   group_id bigint not null references groups(id) on delete cascade,
   title text not null,
-  file_id text not null,
-  file_type text not null,
-  file_name text,
   added_by text,
   active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  check (file_type in ('document', 'photo', 'video', 'audio'))
+  updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_class_materials_group_active
   on class_materials (group_id, created_at)
   where active = true;
+
+-- One row per file attached to a lesson. position orders files within a lesson
+-- (1-based). Hard-deleted with the lesson (cascade); the lesson itself is
+-- soft-deleted via class_materials.active.
+create table if not exists class_material_files (
+  id bigserial primary key,
+  material_id bigint not null references class_materials(id) on delete cascade,
+  file_id text not null,
+  file_type text not null,
+  file_name text,
+  position integer not null default 1,
+  created_at timestamptz not null default now(),
+  check (file_type in ('document', 'photo', 'video', 'audio'))
+);
+
+create index if not exists idx_class_material_files_material
+  on class_material_files (material_id, position);
 
 -- Homework tracking. An admin or homework teacher posts an assignment (tagged
 -- #التكليف) in the linked homework group; registered members reply to submit;
