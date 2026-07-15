@@ -132,7 +132,7 @@ const SAMPLE_TEACHERS = [
   { userId: '222', name: 'هدى', types: ['recitationteacher'] },
 ];
 
-test('mg:teach lists teachers with add, back-to-hub and close rows', async () => {
+test('mg:teach shows the four role-category buttons plus add', async () => {
   const telegram = makeTelegram();
   const storage = makeStorage({ getTeachers: async () => SAMPLE_TEACHERS });
   const { ctx, calls } = makeCtx({ match: ['mg:teach:123', '123'] });
@@ -141,14 +141,18 @@ test('mg:teach lists teachers with add, back-to-hub and close rows', async () =>
   await h.openTeachers(ctx);
 
   const data = cbData(calls, 'editMessageText');
+  assert.ok(data.includes('mg:tcat:123:courseteacher'), 'course category');
+  assert.ok(data.includes('mg:tcat:123:trainingteacher'), 'training category');
+  assert.ok(data.includes('mg:tcat:123:recitationteacher'), 'recitation category');
+  assert.ok(data.includes('mg:tcat:123:homeworkteacher'), 'homework category');
   assert.ok(data.includes('mg:tadd:123'), 'has add-teacher button');
-  assert.ok(data.includes('mg:tch:123:111'), 'first teacher is tappable');
-  assert.ok(data.includes('mg:tch:123:222'), 'second teacher is tappable');
   assert.ok(data.includes('mg:home:123'), 'has back-to-hub row');
   assert.ok(data.includes('msg:dismiss'), 'has close row');
+  // The list itself is only shown after picking a category.
+  assert.ok(!data.includes('mg:tch:123:111'), 'no teacher rows at the category level');
 });
 
-test('mg:teach groups teachers under role-section headers', async () => {
+test('mg:tcat opens the list of teachers for the chosen role', async () => {
   const telegram = makeTelegram();
   const storage = makeStorage({
     getTeachers: async () => [
@@ -156,21 +160,34 @@ test('mg:teach groups teachers under role-section headers', async () => {
       { userId: '222', name: 'هدى', types: ['recitationteacher'] },
     ],
   });
-  const { ctx, calls } = makeCtx({ match: ['mg:teach:123', '123'] });
+  const { ctx, calls } = makeCtx({ match: ['mg:tcat:123:recitationteacher', '123', 'recitationteacher'] });
   const h = createHandlers({ storage, telegram });
 
-  await h.openTeachers(ctx);
+  await h.teacherCategory(ctx);
 
-  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
-  const texts = kb.flat().map((b) => b.text);
-  // Section headers (non-actionable) for each role that has teachers.
-  assert.ok(texts.includes(TEXT.teacherTypeLabel.courseteacher), 'course header');
-  assert.ok(texts.includes(TEXT.teacherTypeLabel.recitationteacher), 'recitation header');
-  // A multi-role teacher appears under each of her roles.
-  const amalRows = kb.filter((row) => row.some((b) => b.callback_data === 'mg:tch:123:111'));
-  assert.equal(amalRows.length, 2, 'أمل appears under both her roles');
-  // Header buttons resolve to a harmless noop callback.
-  assert.ok(kb.flat().some((b) => b.callback_data === 'mg:noop'), 'headers use noop');
+  const data = cbData(calls, 'editMessageText');
+  // Both recitation teachers are tappable; the course-only filter would exclude هدى.
+  assert.ok(data.includes('mg:tch:123:111'), 'أمل in recitation list');
+  assert.ok(data.includes('mg:tch:123:222'), 'هدى in recitation list');
+  assert.ok(data.includes('mg:teach:123'), 'back to categories');
+});
+
+test('mg:tcat course list excludes teachers without that role', async () => {
+  const telegram = makeTelegram();
+  const storage = makeStorage({
+    getTeachers: async () => [
+      { userId: '111', name: 'أمل', types: ['courseteacher'] },
+      { userId: '222', name: 'هدى', types: ['recitationteacher'] },
+    ],
+  });
+  const { ctx, calls } = makeCtx({ match: ['mg:tcat:123:courseteacher', '123', 'courseteacher'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.teacherCategory(ctx);
+
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(data.includes('mg:tch:123:111'), 'أمل in course list');
+  assert.ok(!data.includes('mg:tch:123:222'), 'هدى not in course list');
 });
 
 test('mg:tch opens a teacher menu (rename / change type / remove)', async () => {
@@ -215,9 +232,10 @@ test('mg:trmx removes a teacher and returns to the list', async () => {
   await h.removeTeacher(ctx);
 
   assert.deepEqual(saved[0].map((t) => t.userId), ['222']);
+  // Returns to the teachers categories screen (not a specific teacher row).
   const data = cbData(calls, 'editMessageText');
-  assert.ok(!data.includes('mg:tch:123:111'), 'removed teacher is gone');
-  assert.ok(data.includes('mg:tch:123:222'), 'remaining teacher stays');
+  assert.ok(data.includes('mg:tcat:123:courseteacher'), 'back on the categories screen');
+  assert.ok(data.includes('mg:tadd:123'), 'add button present');
 });
 
 test('mg:tadd shows a role picker (bulk add by role)', async () => {

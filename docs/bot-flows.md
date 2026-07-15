@@ -449,11 +449,11 @@ flowchart TD
   "back to hub" row is spliced in above their Close button.
 - The **teachers** and **training-groups** editors are fully interactive (they
   mirror the offline teachers panel's wording) and key their callbacks on the
-  unique `userId` / `groupId`. The teachers list is **grouped by role** under
-  section headers (course / recitation / training / homework) so it stays
-  readable; a multi-role teacher appears under each of her roles, and any
-  teacher with no role is shown under an "other" section. Header buttons are
-  non-actionable (`mg:noop` / `o:noop`).
+  unique `userId` / `groupId`. The teachers editor is **two levels**: opening it
+  shows one button per role category (course / training / recitation / homework,
+  each with a live count via `mg:tcat` / `o:tcat`); tapping a category opens the
+  list of teachers holding that role. A safety-net "other" category appears only
+  when some teacher has no recognized role.
 - The **teaching materials** panel (owner/operator only) lists a class's stored
   files; from the group hub a material's action is **send to the group** (the
   bot resends the file live into the class chat).

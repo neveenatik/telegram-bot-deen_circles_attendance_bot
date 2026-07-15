@@ -395,38 +395,44 @@ test('createSession: assistant is denied', async () => {
   assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
 });
 
-test('teachers: each teacher is a tappable button showing her type', async () => {
+test('teachers: shows the four role-category buttons plus add', async () => {
   const { teachers } = handlers(offlineStorage());
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:teach:5', '5'] });
   await teachers(ctx);
   const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
   const data = kb.flat().map((b) => b.callback_data);
-  assert.ok(data.includes('o:addteach:5'));
-  assert.ok(data.includes('o:tch:5:7')); // teacher id 7 from the fixture
-  const labels = kb.flat().map((b) => b.text).join(' ');
-  assert.match(labels, /أمل/);
+  assert.ok(data.includes('o:tcat:5:courseteacher'), 'course category');
+  assert.ok(data.includes('o:tcat:5:trainingteacher'), 'training category');
+  assert.ok(data.includes('o:tcat:5:recitationteacher'), 'recitation category');
+  assert.ok(data.includes('o:tcat:5:homeworkteacher'), 'homework category');
+  assert.ok(data.includes('o:addteach:5'), 'has add-teacher button');
+  // The list itself is only shown after picking a category.
+  assert.ok(!data.includes('o:tch:5:7'), 'no teacher rows at the category level');
 });
 
-test('teachers: groups teachers under role-section headers', async () => {
+test('teachers: picking a category lists that role\'s teachers', async () => {
   const storage = offlineStorage({
     getTeachers: async () => [
       { id: 7, userId: 'offline:t1', name: 'أمل', types: ['courseteacher', 'recitationteacher'] },
       { id: 8, userId: 'offline:t2', name: 'سارة', types: [] },
     ],
   });
-  const { teachers } = handlers(storage);
-  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:teach:5', '5'] });
-  await teachers(ctx);
-  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
-  const texts = kb.flat().map((b) => b.text);
-  assert.ok(texts.includes(TEXT.teacherTypeLabel.courseteacher), 'course header');
-  assert.ok(texts.includes(TEXT.teacherTypeLabel.recitationteacher), 'recitation header');
-  // A multi-role teacher appears under each of her roles.
-  const amalRows = kb.filter((row) => row.some((b) => b.callback_data === 'o:tch:5:7'));
-  assert.equal(amalRows.length, 2, 'أمل appears under both her roles');
-  // A role-less teacher shows under the "other" section, still tappable.
-  assert.ok(kb.flat().some((b) => b.callback_data === 'o:tch:5:8'), 'role-less teacher shown');
-  assert.ok(kb.flat().some((b) => b.callback_data === 'o:noop'), 'headers use noop');
+  const { teacherCategory } = handlers(storage);
+
+  // Recitation list includes أمل (id 7), excludes role-less سارة.
+  const rec = makeCtx({ userId: OWNER, match: ['o:tcat:5:recitationteacher', '5', 'recitationteacher'] });
+  await teacherCategory(rec.ctx);
+  const recData = rec.calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(recData.includes('o:tch:5:7'), 'أمل in recitation list');
+  assert.ok(!recData.includes('o:tch:5:8'), 'سارة not in recitation list');
+  assert.ok(recData.includes('o:teach:5'), 'back to categories');
+
+  // The "none" category collects role-less teachers.
+  const none = makeCtx({ userId: OWNER, match: ['o:tcat:5:none', '5', 'none'] });
+  await teacherCategory(none.ctx);
+  const noneData = none.calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(noneData.includes('o:tch:5:8'), 'role-less سارة under "none"');
+  assert.ok(!noneData.includes('o:tch:5:7'), 'أمل not under "none"');
 });
 
 
