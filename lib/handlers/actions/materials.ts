@@ -76,6 +76,7 @@ interface Storage {
   addMaterial(groupId: string, material: NewMaterial): Promise<number | null>;
   addMaterialFile(materialId: number, file: NewMaterialFile): Promise<number | null>;
   removeMaterial(groupId: string, id: string): Promise<void>;
+  renameMaterial(groupId: string, id: string, title: string): Promise<void>;
   resolveManageableClass(gref: string, userId: number | string): Promise<ManageableClass | null>;
 }
 
@@ -150,22 +151,53 @@ function materialsListView(surface: Surface, token: string, materials: Material[
   return { text: `${MAT.title}\n\n${hint}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-function materialMenuView(surface: Surface, token: string, material: Material) {
+export function materialMenuView(surface: Surface, token: string, material: Material) {
   const id = material.id;
   const sendBtn = surface === 'group'
     ? Markup.button.callback(MAT.sendToGroupButton, `mg:matsend:${token}:${id}`)
     : Markup.button.callback(MAT.sendToMeButton, `o:matget:${token}:${id}`);
+  const selectCb = surface === 'group' ? `mg:matsel:${token}:${id}` : `o:matsel:${token}:${id}`;
   const addFileCb = surface === 'group' ? `mg:matfadd:${token}:${id}` : `o:matfadd:${token}:${id}`;
+  const renameCb = surface === 'group' ? `mg:matren:${token}:${id}` : `o:matren:${token}:${id}`;
   const rmCb = surface === 'group' ? `mg:matrm:${token}:${id}` : `o:matrm:${token}:${id}`;
   const backCb = surface === 'group' ? `mg:mat:${token}` : `o:mat:${token}`;
   const rows = [
     [sendBtn],
+  ];
+  // Offer a per-file picker only when there is more than one file to choose from.
+  if (material.fileCount > 1) rows.push([Markup.button.callback(MAT.selectButton, selectCb)]);
+  rows.push(
     [Markup.button.callback(MAT.addFileButton, addFileCb)],
+    [Markup.button.callback(MAT.renameButton, renameCb)],
     [Markup.button.callback(MAT.removeButton, rmCb)],
     [Markup.button.callback(TEXT.backButton, backCb)],
     dismissRow(),
-  ];
+  );
   return { text: MAT.itemMenuTitle(material.title, material.fileCount), keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Per-file picker. Selection is stateless: the set of chosen files is encoded as
+// a bitmask in the callback data (bit i = file at index i). Tapping a file flips
+// its bit and re-renders; Send delivers only the checked files.
+const TYPE_ICON: Record<FileType, string> = {
+  document: '📄', photo: '🖼️', video: '🎬', audio: '🎵',
+};
+
+function materialSelectView(surface: Surface, token: string, material: Material, mask: number) {
+  const id = material.id;
+  const togBase = surface === 'group' ? `mg:matseltog:${token}:${id}` : `o:matseltog:${token}:${id}`;
+  const sendCb = surface === 'group' ? `mg:matselsend:${token}:${id}:${mask}` : `o:matselsend:${token}:${id}:${mask}`;
+  const backCb = surface === 'group' ? `mg:matit:${token}:${id}` : `o:matit:${token}:${id}`;
+  const rows = material.files.map((f, i) => {
+    const checked = (mask >> i) & 1;
+    const name = f.fileName || MAT.fileFallback(i + 1);
+    const label = `${checked ? '☑️' : '⬜️'} ${TYPE_ICON[f.fileType]} ${name}`;
+    return [Markup.button.callback(clampButtonLabel(label), `${togBase}:${i}:${mask}`)];
+  });
+  rows.push([Markup.button.callback(MAT.sendSelectedButton, sendCb)]);
+  rows.push([Markup.button.callback(TEXT.backButton, backCb)]);
+  rows.push(dismissRow());
+  return { text: `${MAT.selectTitle(material.title)}\n\n${MAT.selectHint}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // Shown on the panel while an upload session is active. The Done button carries
@@ -207,15 +239,14 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     resolveManageableClass,
   } = storage;
 
-  // Resend a stored lesson by sending each of its files (in order) by file_id.
-  // The lesson title rides as the caption on the first file only.
-  async function sendMaterial(chatId: string | number, material: Material): Promise<void> {
-    const files = Array.isArray(material.files) ? material.files : [];
+  // Resend a list of files (in order) by file_id. The lesson title rides as the
+  // caption on the first file only.
+  async function sendFiles(chatId: string | number, title: string, files: MaterialFile[]): Promise<void> {
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
       if (!file) continue;
       const extra = i === 0
-        ? { caption: MAT.caption(material.title), parse_mode: 'Markdown' as const }
+        ? { caption: MAT.caption(title), parse_mode: 'Markdown' as const }
         : {};
       switch (file.fileType) {
         case 'document':
@@ -232,6 +263,16 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
           break;
       }
     }
+  }
+
+  // Resend a whole lesson (all files).
+  async function sendMaterial(chatId: string | number, material: Material): Promise<void> {
+    await sendFiles(chatId, material.title, Array.isArray(material.files) ? material.files : []);
+  }
+
+  // Files of a lesson whose index bit is set in the selection mask, in order.
+  function selectedFiles(material: Material, mask: number): MaterialFile[] {
+    return material.files.filter((_, i) => (mask >> i) & 1);
   }
 
   // Open an upload session: send a fresh force-reply prompt and switch the panel
@@ -326,6 +367,72 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const view = materialsListView('offline', String(cls.rowId), list);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  // Rename a lesson: the new title arrives as a text reply routed by text.js
+  // (action 'materialRename'), which rewrites the item menu.
+  async function materialRenameOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'materialRename', surface: 'offline', token: String(cls.rowId), materialId: material.id },
+      sendPrompt: () => ctx.reply(MAT.renamePrompt(material.title), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
+  // Per-file picker (offline): open with everything selected, toggle, then send
+  // only the checked files to the uploader's own chat.
+  async function materialSelectOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
+    const mask = (1 << material.fileCount) - 1;
+    const view = materialSelectView('offline', String(cls.rowId), material, mask);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialSelectToggleOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const idx = Number(m[3] ?? 0);
+    const mask = Number(m[4] ?? 0) ^ (1 << idx);
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const view = materialSelectView('offline', String(cls.rowId), material, mask);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialSelectSendOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const mask = Number(m[3] ?? 0);
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    const userId = ctx.from?.id;
+    if (userId === undefined) return;
+    try {
+      await sendFiles(userId, material.title, files);
+      await ctx.answerCbQuery(MAT.sentSelected(files.length));
+    } catch (err) {
+      logTelegramError('materials.select.send.offline', err, { gref: String(cls.rowId), materialId: id });
+      await ctx.answerCbQuery(MAT.sendFailed);
+    }
   }
 
   async function materialItemOffline(ctx: Context): Promise<void> {
@@ -441,6 +548,67 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const view = materialsListView('group', groupId, list);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  async function materialRenameGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId,
+      record: { action: 'materialRename', surface: 'group', token: groupId, materialId: material.id },
+      sendPrompt: () => ctx.reply(MAT.renamePrompt(material.title), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
+  // Per-file picker (group): send only the checked files into the group chat.
+  async function materialSelectGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
+    const mask = (1 << material.fileCount) - 1;
+    const view = materialSelectView('group', groupId, material, mask);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialSelectToggleGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const idx = Number(m[3] ?? 0);
+    const mask = Number(m[4] ?? 0) ^ (1 << idx);
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const view = materialSelectView('group', groupId, material, mask);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialSelectSendGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const mask = Number(m[3] ?? 0);
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    try {
+      await sendFiles(groupId, material.title, files);
+      await ctx.answerCbQuery(MAT.sentSelected(files.length));
+    } catch (err) {
+      logTelegramError('materials.select.send.group', err, { groupId, materialId: id });
+      await ctx.answerCbQuery(MAT.sendFailed);
+    }
   }
 
   async function materialItemGroup(ctx: Context): Promise<void> {
@@ -591,6 +759,10 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialsOffline,
     materialAddOffline,
     materialFileAddOffline,
+    materialRenameOffline,
+    materialSelectOffline,
+    materialSelectToggleOffline,
+    materialSelectSendOffline,
     materialDoneOffline,
     materialItemOffline,
     materialGetOffline,
@@ -599,6 +771,10 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialsGroup,
     materialAddGroup,
     materialFileAddGroup,
+    materialRenameGroup,
+    materialSelectGroup,
+    materialSelectToggleGroup,
+    materialSelectSendGroup,
     materialDoneGroup,
     materialItemGroup,
     materialSendGroup,
@@ -615,6 +791,10 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:mat:(\d+)$/, h.materialsOffline);
   bot.action(/^o:matadd:(\d+)$/, h.materialAddOffline);
   bot.action(/^o:matfadd:(\d+):(\d+)$/, h.materialFileAddOffline);
+  bot.action(/^o:matren:(\d+):(\d+)$/, h.materialRenameOffline);
+  bot.action(/^o:matsel:(\d+):(\d+)$/, h.materialSelectOffline);
+  bot.action(/^o:matseltog:(\d+):(\d+):(\d+):(\d+)$/, h.materialSelectToggleOffline);
+  bot.action(/^o:matselsend:(\d+):(\d+):(\d+)$/, h.materialSelectSendOffline);
   bot.action(/^o:matdone:(\d+):(\d+)$/, h.materialDoneOffline);
   bot.action(/^o:matit:(\d+):(\d+)$/, h.materialItemOffline);
   bot.action(/^o:matget:(\d+):(\d+)$/, h.materialGetOffline);
@@ -625,6 +805,10 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^mg:mat:(-?\d+)$/, h.materialsGroup);
   bot.action(/^mg:matadd:(-?\d+)$/, h.materialAddGroup);
   bot.action(/^mg:matfadd:(-?\d+):(\d+)$/, h.materialFileAddGroup);
+  bot.action(/^mg:matren:(-?\d+):(\d+)$/, h.materialRenameGroup);
+  bot.action(/^mg:matsel:(-?\d+):(\d+)$/, h.materialSelectGroup);
+  bot.action(/^mg:matseltog:(-?\d+):(\d+):(\d+):(\d+)$/, h.materialSelectToggleGroup);
+  bot.action(/^mg:matselsend:(-?\d+):(\d+):(\d+)$/, h.materialSelectSendGroup);
   bot.action(/^mg:matdone:(-?\d+):(\d+)$/, h.materialDoneGroup);
   bot.action(/^mg:matit:(-?\d+):(\d+)$/, h.materialItemGroup);
   bot.action(/^mg:matsend:(-?\d+):(\d+)$/, h.materialSendGroup);

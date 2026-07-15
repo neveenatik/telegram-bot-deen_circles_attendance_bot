@@ -26,6 +26,7 @@ function matStorage(overrides = {}) {
     addMaterial: async () => 2,
     addMaterialFile: async () => 3,
     removeMaterial: async () => {},
+    renameMaterial: async () => {},
     ...overrides,
   });
 }
@@ -369,4 +370,131 @@ test('group: send-to-group resends the file into the group chat', async () => {
   assert.equal(sent.sendDocument[0][0], '123');
   assert.equal(sent.sendDocument[0][1], 'FID1');
   assert.equal(calls.answerCbQuery[0][0], MAT.sentToGroup);
+});
+
+// ── Rename ─────────────────────────────────────────────────────────────────
+
+test('offline: rename prompt stores a materialRename reply prompt', async () => {
+  const prompts = [];
+  const storage = matStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); } });
+  const { ctx, telegram } = makeCtx({ userId: OWNER, match: ['o:matren:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialRenameOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].rec.action, 'materialRename');
+  assert.equal(prompts[0].rec.surface, 'offline');
+  assert.equal(prompts[0].rec.token, '5');
+  assert.equal(prompts[0].rec.materialId, 1);
+});
+
+test('group: rename prompt stores a materialRename reply prompt with chat token', async () => {
+  const prompts = [];
+  const storage = matStorage({ setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); } });
+  const { ctx, telegram } = makeCtx({ chatType: 'group', admin: true, chatId: 123, match: ['mg:matren:123:1', '123', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.materialRenameGroup(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].rec.action, 'materialRename');
+  assert.equal(prompts[0].rec.surface, 'group');
+  assert.equal(prompts[0].rec.token, '123');
+  assert.equal(prompts[0].rec.materialId, 1);
+});
+
+// ── Selective send ─────────────────────────────────────────────────────────
+
+// A lesson with three files, for exercising the per-file picker.
+function threeFileStorage(overrides = {}) {
+  const material = {
+    id: 1, title: 'درس', addedBy: null, createdAt: null,
+    files: [
+      { id: 11, fileId: 'FID1', fileType: 'document', fileName: 'أ.pdf', position: 1 },
+      { id: 12, fileId: 'FID2', fileType: 'photo', fileName: null, position: 2 },
+      { id: 13, fileId: 'FID3', fileType: 'video', fileName: 'ج.mp4', position: 3 },
+    ],
+    fileCount: 3,
+  };
+  return matStorage({
+    getMaterialById: async () => material,
+    getMaterials: async () => [material],
+    ...overrides,
+  });
+}
+
+test('offline: menu offers the select button only with more than one file', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:matsel:5:1'));
+});
+
+test('offline: opening the picker defaults to all files selected', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matsel:5:1', '5', '1'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialSelectOffline(ctx);
+
+  // mask 0b111 = 7 → each toggle button and the send button carry mask 7.
+  const data = editData(calls);
+  assert.ok(data.includes('o:matseltog:5:1:0:7'));
+  assert.ok(data.includes('o:matseltog:5:1:1:7'));
+  assert.ok(data.includes('o:matseltog:5:1:2:7'));
+  assert.ok(data.includes('o:matselsend:5:1:7'));
+});
+
+test('offline: toggling a file flips its bit in the mask', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matseltog:5:1:1:7', '5', '1', '1', '7'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialSelectToggleOffline(ctx);
+
+  // Clearing bit 1 (7 ^ 0b010 = 5) → send button now carries mask 5.
+  assert.ok(editData(calls).includes('o:matselsend:5:1:5'));
+});
+
+test('offline: sending a subset delivers only the checked files to the uploader', async () => {
+  const { telegram, sent } = telegramWithSend();
+  // mask 5 = 0b101 → files at index 0 (document) and 2 (video).
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matselsend:5:1:5', '5', '1', '5'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialSelectSendOffline(ctx);
+
+  assert.equal(sent.sendDocument.length, 1);
+  assert.equal(sent.sendDocument[0][1], 'FID1');
+  assert.equal(sent.sendVideo.length, 1);
+  assert.equal(sent.sendVideo[0][1], 'FID3');
+  assert.equal(sent.sendPhoto.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.sentSelected(2));
+});
+
+test('offline: sending with an empty selection warns and sends nothing', async () => {
+  const { telegram, sent } = telegramWithSend();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matselsend:5:1:0', '5', '1', '0'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialSelectSendOffline(ctx);
+
+  assert.equal(sent.sendDocument.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.selectNone);
+});
+
+test('group: sending a subset delivers only the checked files into the group', async () => {
+  const { telegram, sent } = telegramWithSend();
+  // mask 6 = 0b110 → files at index 1 (photo) and 2 (video).
+  const { ctx, calls } = makeCtx({ chatType: 'group', admin: true, chatId: 123, match: ['mg:matselsend:123:1:6', '123', '1', '6'] });
+  const h = createHandlers({ storage: threeFileStorage(), telegram });
+
+  await h.materialSelectSendGroup(ctx);
+
+  assert.equal(sent.sendPhoto.length, 1);
+  assert.equal(sent.sendPhoto[0][0], '123');
+  assert.equal(sent.sendVideo.length, 1);
+  assert.equal(sent.sendDocument.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.sentSelected(2));
 });
