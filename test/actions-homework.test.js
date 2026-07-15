@@ -747,13 +747,13 @@ test('listener: a content-text reply saves the body and refreshes the item panel
   assert.equal(telegram.calls.editMessageText.length, 1); // panel refreshed
 });
 
-test('listener: a content-upload media reply appends a file and re-arms the prompt', async () => {
+test('listener: a content-upload media reply appends a file and keeps the session open', async () => {
   const files = [];
   const armed = [];
   const storage = listenerStorage({
-    getReplyPrompt: async () => ({ action: 'homeworkContentUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 3, count: 0, chatId: 777, msgId: 600 }),
+    getReplyPrompt: async () => ({ action: 'homeworkContentUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 3, count: 0, chatId: 777, msgId: 600, promptMsgId: 600 }),
     delReplyPrompt: async () => {},
-    setReplyPrompt: async (_c, _m, rec) => { armed.push(rec); },
+    setReplyPrompt: async (_c, msgId, rec) => { armed.push({ msgId, rec }); },
     addHomeworkFile: async (id, f) => { files.push([id, f]); return 11; },
     getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [{ id: 11, fileId: 'PID', fileType: 'photo', fileName: null, position: 1 }], fileCount: 1 }),
   });
@@ -778,11 +778,42 @@ test('listener: a content-upload media reply appends a file and re-arms the prom
   assert.equal(files[0][0], 3);                 // homework id
   assert.equal(files[0][1].fileId, 'PID');      // largest photo size
   assert.equal(files[0][1].fileType, 'photo');
-  assert.equal(calls.reply.length, 1);          // next prompt armed
+  // Session persisted in place (no new force-reply message), same prompt id.
   assert.equal(armed.length, 1);
-  assert.equal(armed[0].action, 'homeworkContentUpload');
-  assert.equal(armed[0].count, 1);
+  assert.equal(armed[0].msgId, 600);
+  assert.equal(armed[0].rec.action, 'homeworkContentUpload');
+  assert.equal(armed[0].rec.count, 1);
   assert.equal(telegram.calls.editMessageText.length, 1); // session view refreshed
+});
+
+test('listener: an album content file without a reply still appends to the session', async () => {
+  const files = [];
+  const storage = listenerStorage({
+    getReplyPrompt: async () => null,
+    getActiveReplyPrompt: async () => ({ action: 'homeworkContentUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 3, count: 1, chatId: 777, msgId: 600, promptMsgId: 600 }),
+    delReplyPrompt: async () => {},
+    setReplyPrompt: async () => {},
+    addHomeworkFile: async (id, f) => { files.push([id, f]); return 12; },
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'الدرس', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [], fileCount: 2 }),
+  });
+  const { telegram } = telegramRec();
+  const h = createHandlers({ storage, telegram });
+
+  // A photo with NO reply_to (a 2nd album item).
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER, first_name: 'T' },
+    message: { message_id: 602, photo: [{ file_id: 'small' }, { file_id: 'PID2' }] },
+    telegram,
+    reply() { return Promise.resolve({ message_id: 611 }); },
+  };
+
+  let nextCalled = false;
+  await h.onHomeworkMessage(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(files.length, 1);
+  assert.equal(files[0][1].fileId, 'PID2');
 });
 
 test('listener: an unrelated private reply is passed through', async () => {

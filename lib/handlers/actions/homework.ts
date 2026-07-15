@@ -111,12 +111,14 @@ interface ReplyPromptRecord {
   count?: number;
   chatId?: number | string;
   msgId?: number;
+  promptMsgId?: number;
   [key: string]: unknown;
 }
 
 interface Storage {
-  // Reply-prompt plumbing (offline add-title force reply).
+  // Reply-prompt plumbing (offline force replies).
   getReplyPrompt(chatId: string, promptMsgId: number): Promise<ReplyPromptRecord | null>;
+  getActiveReplyPrompt(chatId: string, action: string): Promise<ReplyPromptRecord | null>;
   delReplyPrompt(chatId: string, promptMsgId: number): Promise<void>;
   setReplyPrompt(chatId: string, promptMsgId: number, record: Record<string, unknown>): Promise<void>;
   // Linking + resolution.
@@ -429,6 +431,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     getReplyPrompt,
     delReplyPrompt,
     setReplyPrompt,
+    getActiveReplyPrompt,
     resolveHomeworkMainGroup,
     getHomeworkGroupId,
     resolveManageableClass,
@@ -526,10 +529,16 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     // Everything else falls through to text.js.
     if (chat.type === 'private') {
       const replyTo = msg.reply_to_message;
-      if (!replyTo) return next();
       const chatKey = String(chat.id);
-      const pending = await getReplyPrompt(chatKey, replyTo.message_id);
+      let pending = replyTo ? await getReplyPrompt(chatKey, replyTo.message_id) : null;
+      // Album items (2nd+) lack reply_to; fall back to the active content-upload
+      // session so every attached file lands, not just the first.
+      if ((!pending || pending.action !== 'homeworkContentUpload') && extractFile(msg)) {
+        const active = await getActiveReplyPrompt(chatKey, 'homeworkContentUpload');
+        if (active) pending = active;
+      }
       if (!pending || !pending.groupId) return next();
+      const promptMsgId = Number(pending.promptMsgId ?? replyTo?.message_id);
 
       if (pending.action === 'homeworkAddOffline') {
         const title = (msg.text ?? '').trim();
@@ -538,7 +547,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
           await replyEphemeral(ctx, HW.emptyTitle);
           return;
         }
-        await delReplyPrompt(chatKey, replyTo.message_id);
+        await delReplyPrompt(chatKey, promptMsgId);
         await addHomework(pending.groupId, { title, sourceMessageId: null, postedBy: String(userId) });
         await replyEphemeral(ctx, HW.added(title), { parse_mode: 'Markdown' });
 
@@ -561,7 +570,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       if (pending.action === 'homeworkContentText') {
         const itemId = String(pending.itemId ?? '');
         const body = (msg.text ?? '').trim();
-        await delReplyPrompt(chatKey, replyTo.message_id);
+        await delReplyPrompt(chatKey, promptMsgId);
         await setHomeworkContent(pending.groupId, itemId, body);
         await replyEphemeral(ctx, body ? HW.textSaved : HW.textCleared);
         if (pending.chatId !== undefined && pending.msgId !== undefined) {
@@ -574,7 +583,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
         const itemId = String(pending.itemId ?? '');
         const file = extractFile(msg);
         if (!file) {
-          // Keep the prompt open so she can reply again with a supported file.
+          // Keep the session open so she can send a supported file.
           await replyEphemeral(ctx, HW.attachUnsupported);
           return;
         }
@@ -586,18 +595,16 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
         });
         const count = (pending.count ?? 0) + 1;
 
-        // Rotate the prompt: retire the one just replied to, arm the next.
-        await delReplyPrompt(chatKey, replyTo.message_id);
-        const nextPrompt = await ctx.reply(HW.attachMorePrompt, {
-          parse_mode: 'Markdown', reply_markup: { force_reply: true },
-        });
-        await setReplyPrompt(chatKey, nextPrompt.message_id, {
+        // Persist the session in place (no rotation) so more files — including
+        // album items without a reply — keep appending until Done.
+        await setReplyPrompt(chatKey, promptMsgId, {
           action: 'homeworkContentUpload',
           surface: 'offline',
           gref: pending.gref,
           groupId: pending.groupId,
           itemId: pending.itemId,
           count,
+          userId: pending.userId,
           chatId: pending.chatId,
           msgId: pending.msgId,
         });
@@ -606,7 +613,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
         if (pending.chatId === undefined || pending.msgId === undefined) return;
         const item = await getHomeworkById(pending.groupId, itemId);
         if (!item) return;
-        const view = homeworkContentSessionView(String(pending.gref ?? ''), item, count, nextPrompt.message_id);
+        const view = homeworkContentSessionView(String(pending.gref ?? ''), item, count, promptMsgId);
         try {
           await telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
             parse_mode: 'Markdown', ...view.keyboard,
@@ -623,7 +630,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
         const homeworkId = Number(pending.itemId);
         const memberId = Number(pending.memberId);
         const reply = (msg.text ?? '').trim();
-        await delReplyPrompt(chatKey, replyTo.message_id);
+        await delReplyPrompt(chatKey, promptMsgId);
         await setTeacherReply(homeworkId, memberId, reply, userId);
 
         // Notify the student in her DM (best-effort).

@@ -64,11 +64,13 @@ interface ReplyPromptRecord {
   count?: number;
   chatId?: number | string;
   msgId?: number;
+  promptMsgId?: number;
   [key: string]: unknown;
 }
 
 interface Storage {
   getReplyPrompt(chatId: string, promptMsgId: number): Promise<ReplyPromptRecord | null>;
+  getActiveReplyPrompt(chatId: string, action: string): Promise<ReplyPromptRecord | null>;
   delReplyPrompt(chatId: string, promptMsgId: number): Promise<void>;
   setReplyPrompt(chatId: string, promptMsgId: number, record: Record<string, unknown>): Promise<void>;
   getMaterials(groupId: string): Promise<Material[]>;
@@ -231,6 +233,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     getReplyPrompt,
     delReplyPrompt,
     setReplyPrompt,
+    getActiveReplyPrompt,
     getMaterials,
     getMaterialById,
     addMaterial,
@@ -661,30 +664,38 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(material ? MAT.removedToast(material.title) : undefined);
   }
 
-  // ── Media capture: a file replying to an upload-session prompt ─────────────
+  // ── Media capture: files added to an active upload session ─────────────────
   //
-  // The session chains fresh force-reply prompts: each file replies to the
-  // current prompt; we append it, delete that prompt, and send the next one (so
-  // Telegram auto-arms the reply box again). The first file's caption becomes
-  // the lesson title; every file's caption also names that file (falling back to
-  // the attachment filename). The admin ends the session via the Done button.
+  // A single force-reply prompt opens the session; the panel then shows a
+  // running count + Done. Files are captured whether or not they reply to the
+  // prompt, so sending several at once (an album — where only the first item
+  // carries reply_to) appends every file, not just one. The first file of a NEW
+  // lesson sets its title (its caption, or the attachment filename); every
+  // file's caption also names that file. Done closes the session.
 
   async function onMedia(ctx: Context, next: () => Promise<void>): Promise<void> {
     const msg = ctx.message as UploadedMessage | undefined;
-    const promptMsgId = msg?.reply_to_message?.message_id;
-    if (!msg || !promptMsgId || !ctx.chat) return next();
-
+    if (!msg || !ctx.chat) return next();
     const chatKey = String(ctx.chat.id);
-    const pending = await getReplyPrompt(chatKey, promptMsgId);
+
+    // Prefer the replied-to prompt; fall back to the newest active session so
+    // album items without a reply still land in the same lesson.
+    let pending: ReplyPromptRecord | null = null;
+    const replyId = msg.reply_to_message?.message_id;
+    if (replyId) pending = await getReplyPrompt(chatKey, replyId);
+    if (!pending || pending.action !== 'materialUpload') {
+      pending = await getActiveReplyPrompt(chatKey, 'materialUpload');
+    }
     if (!pending || pending.action !== 'materialUpload' || !pending.groupId) return next();
 
     const file = extractFile(msg);
     if (!file) {
-      // Keep the prompt open so she can reply again with a supported file.
+      // Keep the session open so she can send a supported file.
       await replyEphemeral(ctx, MAT.unsupportedType);
       return;
     }
 
+    const promptMsgId = Number(pending.promptMsgId ?? replyId);
     const groupId = pending.groupId;
     let materialId = pending.materialId ?? null;
     let title = pending.title ?? null;
@@ -694,10 +705,9 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const caption = (msg.caption ?? '').trim();
 
     if (!materialId) {
-      // First file of a new lesson: its caption is the title.
-      title = caption;
+      // First file of a new lesson: its caption (or filename) is the title.
+      title = caption || file.fileName || null;
       if (!title) {
-        // Keep the prompt open so she can resend with a caption.
         await replyEphemeral(ctx, MAT.noCaption);
         return;
       }
@@ -719,13 +729,9 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     });
     count += 1;
 
-    // Rotate the prompt: retire the one just replied to, arm the next.
-    await delReplyPrompt(chatKey, promptMsgId);
-    const nextPrompt = await ctx.reply(MAT.addMorePrompt, {
-      parse_mode: 'Markdown',
-      reply_markup: { force_reply: true },
-    });
-    await setReplyPrompt(chatKey, nextPrompt.message_id, {
+    // Persist the session in place (no prompt rotation) so more files keep
+    // appending until Done.
+    await setReplyPrompt(chatKey, promptMsgId, {
       action: 'materialUpload',
       surface: pending.surface,
       gref: pending.gref,
@@ -738,12 +744,11 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       msgId: pending.msgId,
     });
 
-    // Refresh the originating panel to the session view (running count + Done
-    // button pointing at the freshly-armed prompt).
+    // Refresh the originating panel to the session view (running count + Done).
     if (pending.chatId === undefined || pending.msgId === undefined) return;
     const surface: Surface = pending.surface === 'group' ? 'group' : 'offline';
     const token = surface === 'group' ? String(groupId) : String(pending.gref ?? '');
-    const view = materialSessionView(surface, token, count, nextPrompt.message_id, title);
+    const view = materialSessionView(surface, token, count, promptMsgId, title);
     try {
       await telegram.editMessageText(
         pending.chatId, pending.msgId, undefined,

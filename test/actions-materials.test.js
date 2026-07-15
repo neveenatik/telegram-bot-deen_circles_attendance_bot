@@ -280,6 +280,32 @@ test('onMedia: media that is not a reply is passed through', async () => {
   assert.equal(nextCalled, true);
 });
 
+test('onMedia: an album item without a reply appends to the active session', async () => {
+  // Simulates the 2nd+ file of an album send: Telegram sets reply_to only on the
+  // first item, so the rest arrive with no reply. They must still be captured.
+  const files = [];
+  const prompts = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => null,
+    getActiveReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, promptMsgId: 600, materialId: 2, title: 'الدرس', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ msgId, rec }); },
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = mediaCtx({ reply: false, document: { file_id: 'FID2', file_name: 'second.pdf' } });
+
+  let nextCalled = false;
+  await h.onMedia(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);          // captured, not passed through
+  assert.equal(files.length, 1);
+  assert.equal(files[0].id, 2);             // appended to the open lesson
+  assert.equal(files[0].f.fileId, 'FID2');
+  assert.equal(prompts[0].msgId, 600);      // same session prompt (no rotation)
+  assert.equal(prompts[0].rec.count, 2);    // running count advanced
+});
+
 // ── Add files to an existing lesson + finishing a session ───────────────────
 
 test('offline: add-file opens a session preset to the existing lesson', async () => {

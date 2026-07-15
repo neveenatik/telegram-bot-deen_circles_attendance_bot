@@ -136,6 +136,7 @@ export function makeStorage(overrides = {}) {
     getReplyPrompt: async () => null,
     setReplyPrompt: async () => {},
     delReplyPrompt: async () => {},
+    getActiveReplyPrompt: async () => null,
     getParentGroupId: async () => null,
     setParentGroup: async () => {},
     getTrainingGroups: async () => [],
