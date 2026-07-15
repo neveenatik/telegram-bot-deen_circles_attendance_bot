@@ -19,8 +19,11 @@ function ttStorage(overrides = {}) {
     removeScheduleSlot: async () => {},
     listScheduleForUser: async () => [],
     getTeachers: async () => [],
-    getClassTimezone: async () => 'Asia/Riyadh',
+    getClassTimezone: async () => 'Africa/Cairo',
     setClassTimezone: async () => {},
+    getUserPrefs: async () => ({ timezone: null, weekStart: 6 }),
+    setUserTimezone: async () => {},
+    setUserWeekStart: async () => {},
     ...overrides,
   });
 }
@@ -268,4 +271,104 @@ test('tzPicker: assistant is blocked', async () => {
   const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:tttz:5', '5'] });
   await handlers(store).tzPicker(ctx);
   assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
+});
+
+// ── Viewer preferences: time conversion + week start ─────────────────────────
+
+test('week: converts times into the viewer timezone', async () => {
+  // Asia/Riyadh (+3) and Asia/Dubai (+4) have no DST → a stable +1h shift.
+  const store = ttStorage({
+    listScheduleSlots: async () => [
+      { id: 1, sessionType: 'main', dayOfWeek: 0, timeOfDay: '10:00', teacherId: null, teacherName: null, teacherType: null },
+    ],
+    getClassTimezone: async () => 'Asia/Riyadh',
+    getUserPrefs: async () => ({ timezone: 'Asia/Dubai', weekStart: 6 }),
+  });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(store).week(ctx);
+  const text = calls.editMessageText[0][0];
+  assert.match(text, /11:00/);          // 10:00 Riyadh → 11:00 Dubai
+  assert.match(text, /دبي/);            // header shows the view timezone
+});
+
+test('week: crossing midnight rolls the weekday forward', async () => {
+  const store = ttStorage({
+    listScheduleSlots: async () => [
+      { id: 1, sessionType: 'main', dayOfWeek: 0, timeOfDay: '23:30', teacherId: null, teacherName: null, teacherType: null },
+    ],
+    getClassTimezone: async () => 'Asia/Riyadh',
+    getUserPrefs: async () => ({ timezone: 'Asia/Dubai', weekStart: 6 }),
+  });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(store).week(ctx);
+  const text = calls.editMessageText[0][0];
+  // 23:30 Sunday Riyadh → 00:30 Monday Dubai.
+  assert.match(text, /00:30/);
+  assert.match(text, /الإثنين/);
+});
+
+test('week: orders days from the viewer week-start', async () => {
+  const slots = [
+    { id: 1, sessionType: 'main', dayOfWeek: 6, timeOfDay: '10:00', teacherId: null, teacherName: null, teacherType: null },
+    { id: 2, sessionType: 'main', dayOfWeek: 0, timeOfDay: '10:00', teacherId: null, teacherName: null, teacherType: null },
+  ];
+  const satFirst = ttStorage({ listScheduleSlots: async () => slots, getUserPrefs: async () => ({ timezone: 'Africa/Cairo', weekStart: 6 }), getClassTimezone: async () => 'Africa/Cairo' });
+  const c1 = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(satFirst).week(c1.ctx);
+  const t1 = c1.calls.editMessageText[0][0];
+  assert.ok(t1.indexOf('السبت') < t1.indexOf('الأحد'));
+
+  const sunFirst = ttStorage({ listScheduleSlots: async () => slots, getUserPrefs: async () => ({ timezone: 'Africa/Cairo', weekStart: 0 }), getClassTimezone: async () => 'Africa/Cairo' });
+  const c2 = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(sunFirst).week(c2.ctx);
+  const t2 = c2.calls.editMessageText[0][0];
+  assert.ok(t2.indexOf('الأحد') < t2.indexOf('السبت'));
+});
+
+test('viewTzPicker: offers a follow-class option and marks the current zone', async () => {
+  const store = ttStorage({ getUserPrefs: async () => ({ timezone: 'Asia/Dubai', weekStart: 6 }) });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:vtz:c:5', 'c', '5'] });
+  await handlers(store).viewTzPicker(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:vtzx:c:5:auto'));
+  assert.ok(data.includes('o:vtzx:c:5:Asia/Dubai'));
+  const labels = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.text);
+  assert.ok(labels.some((l) => l.startsWith('✅') && /دبي/.test(l)));
+});
+
+test('viewTzApply: persists the viewer zone and returns to the class week', async () => {
+  let saved = 'unset';
+  const store = ttStorage({ setUserTimezone: async (_u, tz) => { saved = tz; } });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:vtzx:c:5:Asia/Dubai', 'c', '5', 'Asia/Dubai'] });
+  await handlers(store).viewTzApply(ctx);
+  assert.equal(saved, 'Asia/Dubai');
+  assert.equal(calls.answerCbQuery[0][0], TT.viewTzUpdated);
+  assert.ok(editData(calls).includes('o:vtz:c:5')); // back on the class week view
+});
+
+test('viewTzApply: auto clears the viewer zone', async () => {
+  let saved = 'unset';
+  const store = ttStorage({ setUserTimezone: async (_u, tz) => { saved = tz; } });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:vtzx:m:0:auto', 'm', '0', 'auto'] });
+  await handlers(store).viewTzApply(ctx);
+  assert.equal(saved, null);
+});
+
+test('weekStartApply: persists the chosen start day and re-renders my-week', async () => {
+  let saved = -1;
+  const store = ttStorage({ setUserWeekStart: async (_u, d) => { saved = d; }, listScheduleForUser: async () => [] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:vwsx:m:0:1', 'm', '0', '1'] });
+  await handlers(store).weekStartApply(ctx);
+  assert.equal(saved, 1);
+  assert.equal(calls.answerCbQuery[0][0], TT.weekStartUpdated);
+});
+
+test('myWeek: carries the viewer-preference buttons', async () => {
+  const store = ttStorage({ listScheduleForUser: async () => [] });
+  const calls = { reply: [] };
+  const ctx = { chat: { id: 777, type: 'private' }, from: { id: OWNER }, reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 1 }); } };
+  await handlers(store).myWeek(ctx);
+  const data = calls.reply[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:vtz:m:0'));
+  assert.ok(data.includes('o:vws:m:0'));
 });

@@ -28,6 +28,69 @@ function tzLabel(tz: string): string {
   return TIMEZONES.find((z) => z.id === tz)?.label ?? tz;
 }
 
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+// Offset (ms) of `tz` from UTC at a given instant: wallClock(tz) − utc.
+function tzOffsetMs(instant: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p = dtf.formatToParts(instant);
+  const get = (t: string) => Number(p.find((x) => x.type === t)?.value ?? 0);
+  const asUTC = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  return asUTC - instant.getTime();
+}
+
+// UTC instant for a wall-clock time expressed in `tz` (DST-refined).
+function wallToUtc(y: number, mo: number, d: number, h: number, mi: number, tz: string): Date {
+  const guess = Date.UTC(y, mo - 1, d, h, mi, 0);
+  let ts = guess - tzOffsetMs(new Date(guess), tz);
+  ts = guess - tzOffsetMs(new Date(ts), tz);
+  return new Date(ts);
+}
+
+// Weekday (0=Sun..6=Sat) and HH:MM of an instant as seen in `tz`.
+function partsInTz(instant: Date, tz: string): { day: number; time: string } {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23', weekday: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  const p = dtf.formatToParts(instant);
+  const val = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+  return {
+    day: WEEKDAY_INDEX[val('weekday')] ?? 0,
+    time: `${val('hour')}:${val('minute')}`,
+  };
+}
+
+// Convert a recurring weekly slot (dayOfWeek + HH:MM in `fromTz`) into `toTz`,
+// honoring DST and rolling the weekday when the time crosses midnight. Uses the
+// current week as the reference instant. No-op when zones match or toTz is null.
+function convertSlot(dayOfWeek: number, time: string, fromTz: string, toTz: string | null): { dayOfWeek: number; time: string } {
+  if (!toTz || fromTz === toTz) return { dayOfWeek, time };
+  const [h, mi] = time.split(':').map(Number);
+  const now = new Date();
+  // Find a concrete date (within the coming week) that IS `dayOfWeek` in fromTz.
+  for (let i = 0; i < 8; i += 1) {
+    const inst = wallToUtc(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate() + i, h ?? 0, mi ?? 0, fromTz);
+    if (partsInTz(inst, fromTz).day === dayOfWeek) {
+      const p = partsInTz(inst, toTz);
+      return { dayOfWeek: p.day, time: p.time };
+    }
+  }
+  return { dayOfWeek, time };
+}
+
+// Weekday order (length 7) starting at `weekStart` (0=Sun..6=Sat), wrapping.
+function weekOrder(weekStart: number): number[] {
+  const start = ((weekStart % 7) + 7) % 7;
+  return Array.from({ length: 7 }, (_, i) => (start + i) % 7);
+}
+
+
 interface Slot {
   id: number;
   sessionType: string;
@@ -53,6 +116,11 @@ interface Teacher {
   id: number;
   name: string;
   type: string;
+}
+
+interface UserPrefs {
+  timezone: string | null;
+  weekStart: number;
 }
 
 interface ManageableClass {
@@ -87,6 +155,9 @@ interface Storage {
   getTeachers(groupId: string): Promise<Teacher[]>;
   getClassTimezone(groupId: string): Promise<string>;
   setClassTimezone(groupId: string, timezone: string): Promise<void>;
+  getUserPrefs(userId: number | string): Promise<UserPrefs>;
+  setUserTimezone(userId: number | string, timezone: string | null): Promise<void>;
+  setUserWeekStart(userId: number | string, weekStart: number): Promise<void>;
 }
 
 type Handler = (ctx: Context, next: () => Promise<void>) => unknown;
@@ -234,49 +305,130 @@ function removeConfirmView(cls: ManageableClass, slot: Slot) {
   return { text: TT.removeConfirm(dayLabel(slot.dayOfWeek), slot.timeOfDay, typeLabel(slot.sessionType)), keyboard: Markup.inlineKeyboard(rows) };
 }
 
-// Group slots by weekday (Sun..Sat) into a printable week body.
-function weekBody(slots: Slot[]): string {
-  const byDay = new Map<number, Slot[]>();
+// The timezone a viewer effectively sees times in: her chosen zone, or the
+// class's own zone when she hasn't set one ("follow class").
+function effectiveViewTz(prefs: UserPrefs, classTz: string): string {
+  return prefs.timezone ?? classTz;
+}
+
+// Two per-viewer controls (view timezone + week start), shared by the per-class
+// week view (scope 'c', needs the class id) and cross-class my-week (scope 'm').
+function viewPrefsRows(scope: 'c' | 'm', g: string | number) {
+  return [[
+    Markup.button.callback(TT.viewTzButton, `o:vtz:${scope}:${g}`),
+    Markup.button.callback(TT.weekStartButton, `o:vws:${scope}:${g}`),
+  ]];
+}
+
+// Group slots into a printable week body, converted into the viewer's timezone
+// and ordered from her chosen week-start day.
+function weekBody(slots: Slot[], fromTz: string, viewTz: string, weekStart: number): string {
+  const byDay = new Map<number, { time: string; s: Slot }[]>();
   for (const s of slots) {
-    const list = byDay.get(s.dayOfWeek) ?? [];
-    list.push(s);
-    byDay.set(s.dayOfWeek, list);
+    const c = convertSlot(s.dayOfWeek, s.timeOfDay, fromTz, viewTz);
+    const list = byDay.get(c.dayOfWeek) ?? [];
+    list.push({ time: c.time, s });
+    byDay.set(c.dayOfWeek, list);
   }
   const blocks: string[] = [];
-  for (let d = 0; d < 7; d += 1) {
+  for (const d of weekOrder(weekStart)) {
     const list = byDay.get(d);
     if (!list || !list.length) continue;
-    const lines = list.map((s) => TT.weekSlotLine(s.timeOfDay, typeLabel(s.sessionType), s.teacherName));
+    list.sort((a, b) => a.time.localeCompare(b.time));
+    const lines = list.map(({ time, s }) => TT.weekSlotLine(time, typeLabel(s.sessionType), s.teacherName));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
 }
 
-function weekView(cls: ManageableClass, slots: Slot[], timezone: string) {
+function weekView(cls: ManageableClass, slots: Slot[], classTz: string, prefs: UserPrefs) {
   const g = cls.rowId;
-  const body = slots.length ? weekBody(slots) : TT.weekEmpty;
-  const rows = [[Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]];
-  const header = `${TT.weekTitle(cls.name)}\n${TT.tzHeader(tzLabel(timezone))}`;
+  const viewTz = effectiveViewTz(prefs, classTz);
+  const body = slots.length ? weekBody(slots, classTz, viewTz, prefs.weekStart) : TT.weekEmpty;
+  const rows = [
+    ...viewPrefsRows('c', g),
+    [Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()],
+  ];
+  const header = `${TT.weekTitle(cls.name)}\n${TT.viewTzHeader(tzLabel(viewTz))}`;
   return { text: `${header}\n\n${body}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-// Cross-class "my week": group by day, each line tagged with its class.
-function myWeekBody(slots: UserSlot[]): string {
-  const byDay = new Map<number, UserSlot[]>();
+// Cross-class "my week": group by day (converted to the viewer's timezone when
+// she set one, otherwise each line keeps its own class timezone), each line
+// tagged with its class.
+function myWeekBody(slots: UserSlot[], prefs: UserPrefs): string {
+  const byDay = new Map<number, { time: string; tz: string; s: UserSlot }[]>();
   for (const s of slots) {
-    const list = byDay.get(s.dayOfWeek) ?? [];
-    list.push(s);
-    byDay.set(s.dayOfWeek, list);
+    const viewTz = prefs.timezone ?? s.timezone;
+    const c = convertSlot(s.dayOfWeek, s.timeOfDay, s.timezone, prefs.timezone);
+    const list = byDay.get(c.dayOfWeek) ?? [];
+    list.push({ time: c.time, tz: viewTz, s });
+    byDay.set(c.dayOfWeek, list);
   }
   const blocks: string[] = [];
-  for (let d = 0; d < 7; d += 1) {
+  for (const d of weekOrder(prefs.weekStart)) {
     const list = byDay.get(d);
     if (!list || !list.length) continue;
-    const lines = list.map((s) => TT.myWeekSlotLineTz(s.timeOfDay, tzLabel(s.timezone), s.className, typeLabel(s.sessionType), s.teacherName));
+    list.sort((a, b) => a.time.localeCompare(b.time));
+    const lines = list.map(({ time, tz, s }) =>
+      TT.myWeekSlotLineTz(time, tzLabel(tz), s.className, typeLabel(s.sessionType), s.teacherName));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
 }
+
+// My-week message (used by /myweek and re-rendered after a preference change).
+function myWeekView(slots: UserSlot[], prefs: UserPrefs) {
+  const body = slots.length ? myWeekBody(slots, prefs) : TT.weekEmpty;
+  const viewLabel = prefs.timezone ? tzLabel(prefs.timezone) : TT.viewTzAuto;
+  const rows = [
+    ...viewPrefsRows('m', 0),
+    [...dismissRow()],
+  ];
+  const header = `${TT.myWeekTitle}\n${TT.viewTzHeader(viewLabel)}`;
+  return { text: `${header}\n\n${body}`, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Per-viewer view-timezone picker. `back` is the callback to return to.
+function viewTzPickerView(scope: 'c' | 'm', g: string | number, current: string | null, back: string) {
+  const rows = [[Markup.button.callback(
+    `${current === null ? '✅ ' : ''}${TT.viewTzAutoButton}`,
+    `o:vtzx:${scope}:${g}:auto`,
+  )]];
+  for (let i = 0; i < TIMEZONES.length; i += 2) {
+    const a = TIMEZONES[i];
+    if (!a) continue;
+    const b = TIMEZONES[i + 1];
+    const row = [viewTzButtonFor(scope, g, a, current)];
+    if (b) row.push(viewTzButtonFor(scope, g, b, current));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
+  return { text: TT.viewTzPickTitle, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function viewTzButtonFor(scope: 'c' | 'm', g: string | number, zone: { id: string; label: string }, current: string | null) {
+  const mark = zone.id === current ? '✅ ' : '';
+  return Markup.button.callback(clampButtonLabel(`${mark}${zone.label}`), `o:vtzx:${scope}:${g}:${zone.id}`);
+}
+
+// Per-viewer week-start picker. Two weekdays per row.
+function weekStartPickerView(scope: 'c' | 'm', g: string | number, current: number, back: string) {
+  const rows = [];
+  for (let d = 0; d < 7; d += 2) {
+    const row = [weekStartButtonFor(scope, g, d, current)];
+    if (d + 1 < 7) row.push(weekStartButtonFor(scope, g, d + 1, current));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
+  return { text: TT.weekStartPickTitle, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function weekStartButtonFor(scope: 'c' | 'm', g: string | number, day: number, current: number) {
+  const mark = day === current ? '✅ ' : '';
+  return Markup.button.callback(`${mark}${dayLabel(day)}`, `o:vwsx:${scope}:${g}:${day}`);
+}
+
 
 export function createHandlers({ storage }: { storage: Storage }) {
   const {
@@ -293,6 +445,9 @@ export function createHandlers({ storage }: { storage: Storage }) {
     getTeachers,
     getClassTimezone,
     setClassTimezone,
+    getUserPrefs,
+    setUserTimezone,
+    setUserWeekStart,
   } = storage;
 
   // Resolve the class for any role (viewing is open); returns null if unresolved.
@@ -317,10 +472,85 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const cls = await resolve(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const slots = await listScheduleSlots(cls.groupId);
-    const timezone = await getClassTimezone(cls.groupId);
-    const view = weekView(cls, slots, timezone);
+    const classTz = await getClassTimezone(cls.groupId);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const view = weekView(cls, slots, classTz, prefs);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  // ── Per-viewer display preferences (view timezone + week start) ────────────
+  // These are personal to the viewer and apply to both the per-class week view
+  // (scope 'c', with the class id) and cross-class my-week (scope 'm').
+
+  // Re-render whichever week surface the viewer came from after a pref change.
+  async function rerenderWeek(ctx: Context, scope: string, g: string): Promise<void> {
+    const userId = ctx.from?.id ?? '';
+    const prefs = await getUserPrefs(userId);
+    if (scope === 'm') {
+      const slots = await listScheduleForUser(userId);
+      const view = myWeekView(slots, prefs);
+      await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+      return;
+    }
+    const cls = await resolveManageableClass(g, userId);
+    if (!cls) return;
+    const slots = await listScheduleSlots(cls.groupId);
+    const classTz = await getClassTimezone(cls.groupId);
+    const view = weekView(cls, slots, classTz, prefs);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+  }
+
+  function backFor(scope: string, g: string): string {
+    return scope === 'm' ? 'o:mw' : `o:ttweek:${g}`;
+  }
+
+  // My-week re-render entry (returned to from the pref pickers).
+  async function myWeekRefresh(ctx: Context): Promise<void> {
+    await rerenderWeek(ctx, 'm', '0');
+    await ctx.answerCbQuery();
+  }
+
+  async function viewTzPicker(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const view = viewTzPickerView(scope as 'c' | 'm', g, prefs.timezone, backFor(scope, g));
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function viewTzApply(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const tz = m[3] ?? '';
+    if (tz !== 'auto' && !TIMEZONES.some((z) => z.id === tz)) { await ctx.answerCbQuery(TT.missing); return; }
+    await setUserTimezone(ctx.from?.id ?? '', tz === 'auto' ? null : tz);
+    await rerenderWeek(ctx, scope, g);
+    await ctx.answerCbQuery(TT.viewTzUpdated);
+  }
+
+  async function weekStartPicker(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const view = weekStartPickerView(scope as 'c' | 'm', g, prefs.weekStart, backFor(scope, g));
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function weekStartApply(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const day = Number(m[3] ?? NaN);
+    if (!Number.isInteger(day) || day < 0 || day > 6) { await ctx.answerCbQuery(TT.missing); return; }
+    await setUserWeekStart(ctx.from?.id ?? '', day);
+    await rerenderWeek(ctx, scope, g);
+    await ctx.answerCbQuery(TT.weekStartUpdated);
   }
 
   // Timezone picker + apply (owner/operator only).
@@ -440,14 +670,16 @@ export function createHandlers({ storage }: { storage: Storage }) {
     await ctx.answerCbQuery(TT.removedToast);
   }
 
-  // /myweek — cross-class aggregated week for every class the user manages.
+  // /myweek — cross-class aggregated week for every class the user manages or
+  // is enrolled in (visible to everyone), shown in her chosen view preferences.
   async function myWeek(ctx: Context): Promise<void> {
     if (ctx.chat?.type !== 'private') return;
     const userId = ctx.from?.id;
     if (userId === undefined) return;
     const slots = await listScheduleForUser(userId);
-    const body = slots.length ? myWeekBody(slots) : TT.weekEmpty;
-    await ctx.reply(`${TT.myWeekTitle}\n\n${body}`, { parse_mode: 'Markdown' });
+    const prefs = await getUserPrefs(userId);
+    const view = myWeekView(slots, prefs);
+    await ctx.reply(view.text, { parse_mode: 'Markdown', ...view.keyboard });
   }
 
   // Capture the time reply that completes an add flow.
@@ -496,6 +728,11 @@ export function createHandlers({ storage }: { storage: Storage }) {
     week,
     tzPicker,
     tzApply,
+    myWeekRefresh,
+    viewTzPicker,
+    viewTzApply,
+    weekStartPicker,
+    weekStartApply,
     addPickType,
     addPickDay,
     addPromptTime,
@@ -517,6 +754,11 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:ttweek:(\d+)$/, h.week);
   bot.action(/^o:tttz:(\d+)$/, h.tzPicker);
   bot.action(/^o:tttzx:(\d+):([A-Za-z]+(?:\/[A-Za-z_]+)+)$/, h.tzApply);
+  bot.action(/^o:mw$/, h.myWeekRefresh);
+  bot.action(/^o:vtz:([cm]):(\d+)$/, h.viewTzPicker);
+  bot.action(/^o:vtzx:([cm]):(\d+):(auto|[A-Za-z]+(?:\/[A-Za-z_]+)+)$/, h.viewTzApply);
+  bot.action(/^o:vws:([cm]):(\d+)$/, h.weekStartPicker);
+  bot.action(/^o:vwsx:([cm]):(\d+):([0-6])$/, h.weekStartApply);
   bot.action(/^o:ttadd:(\d+)$/, h.addPickType);
   bot.action(/^o:ttaddt:(\d+):([a-zA-Z]+)$/, h.addPickDay);
   bot.action(/^o:ttaddd:(\d+):([a-zA-Z]+):(\d+)$/, h.addPromptTime);

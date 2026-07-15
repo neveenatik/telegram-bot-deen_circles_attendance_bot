@@ -40,13 +40,23 @@ create table if not exists group_settings (
   homework_group_id text,
   retention_days integer not null default 90,
   -- IANA timezone the class's weekly timetable times are expressed in.
-  timezone text not null default 'Asia/Riyadh',
+  timezone text not null default 'Africa/Cairo',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (retention_days > 0)
 );
 
--- Registered members
+-- Per-user display preferences for the weekly timetable. timezone null means
+-- "follow each class's own timezone" (no conversion); week_start is 0=Sun..6=Sat.
+create table if not exists user_prefs (
+  user_id text primary key,
+  timezone text,
+  week_start smallint not null default 6,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (week_start between 0 and 6)
+);
+
 create table if not exists members (
   id bigserial primary key,
   group_id bigint not null references groups(id) on delete cascade,

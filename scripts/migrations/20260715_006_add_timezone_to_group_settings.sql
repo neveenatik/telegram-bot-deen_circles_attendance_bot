@@ -17,7 +17,7 @@ begin
     where version = '20260715_006_add_timezone_to_group_settings'
   ) then
     alter table group_settings
-      add column if not exists timezone text not null default 'Asia/Riyadh';
+      add column if not exists timezone text not null default 'Africa/Cairo';
 
     insert into schema_migrations (version)
     values ('20260715_006_add_timezone_to_group_settings');
