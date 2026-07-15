@@ -23,9 +23,40 @@ const SCHEDULE_TYPES = ['main', 'registeredSecondary', 'training'];
 // Curated timezone list (TEXT.timetable.timezones); first entry is the default.
 const TIMEZONES = TT.timezones as { id: string; label: string }[];
 
-// Human label for an IANA zone; falls back to the raw id for unknown zones.
+// Every IANA zone the runtime knows, for the "all zones" browser. Grouped by the
+// region prefix (Africa, Asia, …) so a viewer can drill down instead of paging
+// hundreds of flat entries.
+const ALL_ZONES: string[] = (typeof Intl.supportedValuesOf === 'function'
+  ? (Intl.supportedValuesOf('timeZone') as string[])
+  : TIMEZONES.map((z) => z.id)).slice().sort();
+const ALL_ZONE_SET = new Set(ALL_ZONES);
+const ZONE_REGIONS: string[] = [...new Set(ALL_ZONES.map((z) => z.split('/')[0] ?? z))];
+const ZONES_PAGE_SIZE = 8;
+
+function zonesInRegion(region: string): string[] {
+  return ALL_ZONES.filter((z) => (z.split('/')[0] ?? z) === region);
+}
+
+// A short "UTC±H[:MM]" suffix for a zone at the current instant.
+function offsetLabel(tz: string): string {
+  const min = Math.round(tzOffsetMs(new Date(), tz) / 60000);
+  const sign = min < 0 ? '-' : '+';
+  const h = Math.floor(Math.abs(min) / 60);
+  const m = Math.abs(min) % 60;
+  return `UTC${sign}${h}${m ? `:${String(m).padStart(2, '0')}` : ''}`;
+}
+
+// Display label for an arbitrary zone in the browser: the sub-region path (region
+// prefix stripped, underscores spaced) plus its current offset.
+function zoneBrowseLabel(tz: string): string {
+  const rest = tz.includes('/') ? tz.slice(tz.indexOf('/') + 1) : tz;
+  return `${rest.replace(/_/g, ' ')} (${offsetLabel(tz)})`;
+}
+
+// Human label for an IANA zone; prefers the curated Arabic label, else a
+// browse-style label with offset.
 function tzLabel(tz: string): string {
-  return TIMEZONES.find((z) => z.id === tz)?.label ?? tz;
+  return TIMEZONES.find((z) => z.id === tz)?.label ?? zoneBrowseLabel(tz);
 }
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -237,6 +268,7 @@ function tzPickerView(cls: ManageableClass, current: string) {
     if (b) row.push(tzButtonFor(g, b, current));
     rows.push(row);
   }
+  rows.push([Markup.button.callback(TT.allZonesButton, `o:tzr:${g}`)]);
   rows.push([Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()]);
   return { text: TT.tzPickTitle, keyboard: Markup.inlineKeyboard(rows) };
 }
@@ -246,6 +278,50 @@ function tzButtonFor(g: string | number, zone: { id: string; label: string }, cu
   return Markup.button.callback(clampButtonLabel(`${mark}${zone.label}`), `o:tttzx:${g}:${zone.id}`);
 }
 
+// Shared "all zones" browser. Region list, then a paginated list of the zones in
+// that region. `regionCb`/`zoneCb`/`navCb` are supplied by each picker so the
+// final selection reuses that picker's existing apply callback.
+function regionListView(regionCb: (i: number) => string, back: string) {
+  const rows = [];
+  for (let i = 0; i < ZONE_REGIONS.length; i += 2) {
+    const a = ZONE_REGIONS[i];
+    if (!a) continue;
+    const row = [Markup.button.callback(a, regionCb(i))];
+    const b = ZONE_REGIONS[i + 1];
+    if (b) row.push(Markup.button.callback(b, regionCb(i + 1)));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
+  return { text: TT.allZonesRegionTitle, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function zonesPageView(
+  regionIdx: number,
+  page: number,
+  current: string | null,
+  zoneCb: (tz: string) => string,
+  navCb: (page: number) => string,
+  back: string,
+) {
+  const region = ZONE_REGIONS[regionIdx] ?? '';
+  const zones = zonesInRegion(region);
+  const totalPages = Math.max(1, Math.ceil(zones.length / ZONES_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const start = safePage * ZONES_PAGE_SIZE;
+  const rows = zones.slice(start, start + ZONES_PAGE_SIZE).map((tz) => {
+    const mark = tz === current ? '✅ ' : '';
+    return [Markup.button.callback(clampButtonLabel(`${mark}${zoneBrowseLabel(tz)}`), zoneCb(tz))];
+  });
+  if (totalPages > 1) {
+    rows.push([
+      ...(safePage > 0 ? [Markup.button.callback(TEXT.navigationPrevButton, navCb(safePage - 1))] : []),
+      Markup.button.callback(`📄 ${safePage + 1}/${totalPages}`, 'o:noop'),
+      ...(safePage < totalPages - 1 ? [Markup.button.callback(TEXT.navigationNextButton, navCb(safePage + 1))] : []),
+    ]);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
+  return { text: TT.allZonesZoneTitle(region), keyboard: Markup.inlineKeyboard(rows) };
+}
 
 function pickTypeView(cls: ManageableClass) {
   const g = cls.rowId;
@@ -403,6 +479,7 @@ function viewTzPickerView(scope: 'c' | 'm', g: string | number, current: string 
     if (b) row.push(viewTzButtonFor(scope, g, b, current));
     rows.push(row);
   }
+  rows.push([Markup.button.callback(TT.allZonesButton, `o:vzr:${scope}:${g}`)]);
   rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
   return { text: TT.viewTzPickTitle, keyboard: Markup.inlineKeyboard(rows) };
 }
@@ -526,7 +603,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const scope = m[1] ?? 'm';
     const g = m[2] ?? '0';
     const tz = m[3] ?? '';
-    if (tz !== 'auto' && !TIMEZONES.some((z) => z.id === tz)) { await ctx.answerCbQuery(TT.missing); return; }
+    if (tz !== 'auto' && !ALL_ZONE_SET.has(tz)) { await ctx.answerCbQuery(TT.missing); return; }
     await setUserTimezone(ctx.from?.id ?? '', tz === 'auto' ? null : tz);
     await rerenderWeek(ctx, scope, g);
     await ctx.answerCbQuery(TT.viewTzUpdated);
@@ -567,12 +644,67 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const tz = readMatch(ctx)[2] ?? '';
-    if (!TIMEZONES.some((z) => z.id === tz)) { await ctx.answerCbQuery(TT.missing); return; }
+    if (!ALL_ZONE_SET.has(tz)) { await ctx.answerCbQuery(TT.missing); return; }
     await setClassTimezone(cls.groupId, tz);
     const slots = await listScheduleSlots(cls.groupId);
     const view = panelView(cls, slots, tz, canManage(cls.role));
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery(TT.tzUpdated);
+  }
+
+  // All-zones browser for the class-source picker (owner/operator only).
+  async function tzRegions(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const g = cls.rowId;
+    const view = regionListView((i) => `o:tzp:${g}:${i}:0`, `o:tttz:${g}`);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function tzZonesPage(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const g = cls.rowId;
+    const m = readMatch(ctx);
+    const regionIdx = Number(m[2] ?? 0);
+    const page = Number(m[3] ?? 0);
+    const current = await getClassTimezone(cls.groupId);
+    const view = zonesPageView(
+      regionIdx, page, current,
+      (tz) => `o:tttzx:${g}:${tz}`,
+      (p) => `o:tzp:${g}:${regionIdx}:${p}`,
+      `o:tzr:${g}`,
+    );
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // All-zones browser for the per-viewer display-timezone picker.
+  async function viewTzRegions(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const view = regionListView((i) => `o:vzp:${scope}:${g}:${i}:0`, `o:vtz:${scope}:${g}`);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function viewTzZonesPage(ctx: Context): Promise<void> {
+    const m = readMatch(ctx);
+    const scope = m[1] ?? 'm';
+    const g = m[2] ?? '0';
+    const regionIdx = Number(m[3] ?? 0);
+    const page = Number(m[4] ?? 0);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const view = zonesPageView(
+      regionIdx, page, prefs.timezone,
+      (tz) => `o:vtzx:${scope}:${g}:${tz}`,
+      (p) => `o:vzp:${scope}:${g}:${regionIdx}:${p}`,
+      `o:vzr:${scope}:${g}`,
+    );
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
   }
 
   async function addPickType(ctx: Context): Promise<void> {
@@ -728,9 +860,13 @@ export function createHandlers({ storage }: { storage: Storage }) {
     week,
     tzPicker,
     tzApply,
+    tzRegions,
+    tzZonesPage,
     myWeekRefresh,
     viewTzPicker,
     viewTzApply,
+    viewTzRegions,
+    viewTzZonesPage,
     weekStartPicker,
     weekStartApply,
     addPickType,
@@ -753,10 +889,14 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:tt:(\d+)$/, h.panel);
   bot.action(/^o:ttweek:(\d+)$/, h.week);
   bot.action(/^o:tttz:(\d+)$/, h.tzPicker);
-  bot.action(/^o:tttzx:(\d+):([A-Za-z]+(?:\/[A-Za-z_]+)+)$/, h.tzApply);
+  bot.action(/^o:tttzx:(\d+):([A-Za-z0-9_+\-/]+)$/, h.tzApply);
+  bot.action(/^o:tzr:(\d+)$/, h.tzRegions);
+  bot.action(/^o:tzp:(\d+):(\d+):(\d+)$/, h.tzZonesPage);
   bot.action(/^o:mw$/, h.myWeekRefresh);
   bot.action(/^o:vtz:([cm]):(\d+)$/, h.viewTzPicker);
-  bot.action(/^o:vtzx:([cm]):(\d+):(auto|[A-Za-z]+(?:\/[A-Za-z_]+)+)$/, h.viewTzApply);
+  bot.action(/^o:vtzx:([cm]):(\d+):(auto|[A-Za-z0-9_+\-/]+)$/, h.viewTzApply);
+  bot.action(/^o:vzr:([cm]):(\d+)$/, h.viewTzRegions);
+  bot.action(/^o:vzp:([cm]):(\d+):(\d+):(\d+)$/, h.viewTzZonesPage);
   bot.action(/^o:vws:([cm]):(\d+)$/, h.weekStartPicker);
   bot.action(/^o:vwsx:([cm]):(\d+):([0-6])$/, h.weekStartApply);
   bot.action(/^o:ttadd:(\d+)$/, h.addPickType);

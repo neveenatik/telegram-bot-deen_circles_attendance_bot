@@ -73,6 +73,37 @@ test('home: admin with records edits the message and answers refreshed', async (
   assert.deepEqual(calls.answerCbQuery, [[TEXT.refreshed]]);
 });
 
+test('recordsLine renders the session date in the given timezone', () => {
+  const s = { name: 'جلسة', endedAt: '2026-01-01T23:00:00Z' };
+  const cairo = TEXT.recordsLine(1, s, 'Africa/Cairo');
+  const honolulu = TEXT.recordsLine(1, s, 'Pacific/Honolulu');
+  // The instant lands on different calendar days in the two zones.
+  assert.notEqual(cairo, honolulu);
+  assert.equal(
+    cairo,
+    `#1 | جلسة | ${new Date(s.endedAt).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
+  );
+});
+
+test('seriesReport: renders record dates in the class timezone', async () => {
+  const sessions = [{ seriesId: 2, type: 'main', name: 'جلسة', endedAt: '2026-01-01T23:00:00Z', participants: {} }];
+  const { seriesReport } = createHandlers({
+    storage: historyStorage({
+      getAllSessions: async () => sessions,
+      getClassTimezone: async () => 'Pacific/Honolulu',
+    }),
+  });
+  const { ctx, calls } = makeCtx({ admin: true, match: ['h:rep:123:2', '123', '2'] });
+
+  await seriesReport(ctx);
+
+  const report = calls.reply.map((c) => c[0]).join('\n');
+  const hono = new Date(sessions[0].endedAt).toLocaleDateString('ar-EG', { timeZone: 'Pacific/Honolulu' });
+  const cairo = new Date(sessions[0].endedAt).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
+  assert.ok(report.includes(hono));
+  assert.ok(!report.includes(cairo));
+});
+
 // Archived-session editor targets members by their Telegram userId (`u<id>`)
 // token, so a status edit hits the intended person regardless of where they
 // land in the alphabetically sorted list (the source of the earlier

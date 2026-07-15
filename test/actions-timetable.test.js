@@ -273,6 +273,52 @@ test('tzPicker: assistant is blocked', async () => {
   assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
 });
 
+// ── All-zones browser (full IANA coverage) ───────────────────────────────────
+
+test('tzPicker: offers an "all zones" browser entry', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tttz:5', '5'] });
+  await handlers(ttStorage()).tzPicker(ctx);
+  assert.ok(editData(calls).includes('o:tzr:5'));
+});
+
+test('tzRegions: lists geographic regions that drill into zone pages', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tzr:5', '5'] });
+  await handlers(ttStorage()).tzRegions(ctx);
+  const data = editData(calls);
+  assert.ok(data.some((cb) => /^o:tzp:5:\d+:0$/.test(cb)));
+});
+
+test('tzZonesPage: lists concrete zones wired to the class apply callback', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tzp:5:0:0', '5', '0', '0'] });
+  await handlers(ttStorage()).tzZonesPage(ctx);
+  const data = editData(calls);
+  assert.ok(data.some((cb) => cb.startsWith('o:tttzx:5:')));
+});
+
+test('tzApply: accepts any valid IANA zone, not just the curated list', async () => {
+  let saved = null;
+  const store = ttStorage({ setClassTimezone: async (g, tz) => { saved = [g, tz]; } });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:tttzx:5:America/New_York', '5', 'America/New_York'] });
+  await handlers(store).tzApply(ctx);
+  assert.deepEqual(saved, ['offline:o:1', 'America/New_York']);
+  assert.equal(calls.answerCbQuery[0][0], TT.tzUpdated);
+});
+
+test('viewTzApply: accepts any valid IANA zone', async () => {
+  let saved = null;
+  const store = ttStorage({ setUserTimezone: async (u, tz) => { saved = tz; } });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:vtzx:m:0:America/New_York', 'm', '0', 'America/New_York'] });
+  await handlers(store).viewTzApply(ctx);
+  assert.equal(saved, 'America/New_York');
+});
+
+test('viewTzZonesPage: wires zones to the viewer apply callback', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:vzp:m:0:0:0', 'm', '0', '0', '0'] });
+  await handlers(ttStorage()).viewTzZonesPage(ctx);
+  const data = editData(calls);
+  assert.ok(data.some((cb) => cb.startsWith('o:vtzx:m:0:')));
+});
+
 // ── Viewer preferences: time conversion + week start ─────────────────────────
 
 test('week: converts times into the viewer timezone', async () => {
