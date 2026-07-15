@@ -173,22 +173,38 @@ test('offline: item menu hides manage-files for a single-file lesson', async () 
   assert.ok(!editData(calls).includes('o:matfiles:5:1'));
 });
 
-test('offline: files view lists each file with a preview and a delete action', async () => {
+test('offline: files view lists each file as a checkbox with preview/delete actions', async () => {
   const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfiles:5:1', '5', '1'] });
   const h = createHandlers({ storage: twoFileStorage(), telegram });
 
   await h.materialFilesOffline(ctx);
 
   const data = editData(calls);
-  assert.ok(data.includes('o:matfprev:5:1:11'));
-  assert.ok(data.includes('o:matfrm:5:1:11'));
-  assert.ok(data.includes('o:matfprev:5:1:12'));
-  assert.ok(data.includes('o:matfrm:5:1:12'));
+  // Opens with nothing selected (mask 0): each file is a toggle carrying its index.
+  assert.ok(data.includes('o:matftog:5:1:0:0'));
+  assert.ok(data.includes('o:matftog:5:1:1:0'));
+  // Preview / delete act on the current selection mask (0 here).
+  assert.ok(data.includes('o:matfprev:5:1:0'));
+  assert.ok(data.includes('o:matfrm:5:1:0'));
 });
 
-test('offline: previewing a file resends just that file to the admin', async () => {
+test('offline: toggling a file flips its bit in the selection mask', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matftog:5:1:1:0', '5', '1', '1', '0'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFileToggleOffline(ctx);
+
+  const data = editData(calls);
+  // Bit 1 set → mask 2; actions now carry mask 2, and toggling file 1 again clears it.
+  assert.ok(data.includes('o:matfprev:5:1:2'));
+  assert.ok(data.includes('o:matfrm:5:1:2'));
+  assert.ok(data.includes('o:matftog:5:1:1:2'));
+});
+
+test('offline: previewing resends the selected files to the admin', async () => {
   const { telegram, sent } = telegramWithSend();
-  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matfprev:5:1:12', '5', '1', '12'] });
+  // Mask 2 → only file index 1 (the photo, id 12) is selected.
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matfprev:5:1:2', '5', '1', '2'] });
   const h = createHandlers({ storage: twoFileStorage(), telegram });
 
   await h.materialFilePreviewOffline(ctx);
@@ -196,10 +212,32 @@ test('offline: previewing a file resends just that file to the admin', async () 
   assert.equal(sent.sendPhoto.length, 1);
   assert.equal(sent.sendPhoto[0][1], 'FID2');
   assert.equal(sent.sendDocument.length, 0);
-  assert.equal(calls.answerCbQuery[0][0], MAT.previewSent);
+  assert.equal(calls.answerCbQuery[0][0], MAT.previewSentMany(1));
 });
 
-test('offline: confirming a file delete removes only that file and re-renders', async () => {
+test('offline: previewing with nothing selected warns and sends nothing', async () => {
+  const { telegram, sent } = telegramWithSend();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:matfprev:5:1:0', '5', '1', '0'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFilePreviewOffline(ctx);
+
+  assert.equal(sent.sendPhoto.length, 0);
+  assert.equal(sent.sendDocument.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], MAT.selectNone);
+});
+
+test('offline: delete asks to confirm the selected files', async () => {
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrm:5:1:2', '5', '1', '2'] });
+  const h = createHandlers({ storage: twoFileStorage(), telegram });
+
+  await h.materialFileRemoveOffline(ctx);
+
+  // Confirm button carries the same mask through to the exec step.
+  assert.ok(editData(calls).includes('o:matfrmx:5:1:2'));
+});
+
+test('offline: confirming a delete removes only the selected files and re-renders', async () => {
   const removed = [];
   const storage = matStorage({
     removeMaterialFile: async (g, mid, fid) => { removed.push([g, mid, fid]); },
@@ -225,27 +263,29 @@ test('offline: confirming a file delete removes only that file and re-renders', 
       fileCount: 1,
     };
   };
-  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:12', '5', '1', '12'] });
+  // Mask 2 → delete only file index 1 (id 12).
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:2', '5', '1', '2'] });
   const h = createHandlers({ storage, telegram });
 
   await h.materialFileRemoveExecOffline(ctx);
 
   assert.deepEqual(removed, [['offline:o:1', 1, 12]]);
-  assert.equal(calls.answerCbQuery[0][0], MAT.fileRemovedToast);
+  assert.equal(calls.answerCbQuery[0][0], MAT.filesRemovedToast(1));
   // Only one file left → shows the item menu (not the files list).
   assert.ok(editData(calls).includes('o:matget:5:1'));
 });
 
-test('offline: refuses to delete the last remaining file', async () => {
+test('offline: refuses to delete every file at once', async () => {
   const removed = [];
-  const storage = matStorage({ removeMaterialFile: async (...a) => { removed.push(a); } });
-  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:11', '5', '1', '11'] });
+  const storage = twoFileStorage({ removeMaterialFile: async (...a) => { removed.push(a); } });
+  // Mask 3 → both files selected, which would empty the lesson.
+  const { ctx, calls, telegram } = makeCtx({ userId: OWNER, match: ['o:matfrmx:5:1:3', '5', '1', '3'] });
   const h = createHandlers({ storage, telegram });
 
   await h.materialFileRemoveExecOffline(ctx);
 
   assert.equal(removed.length, 0);
-  assert.equal(calls.answerCbQuery[0][0], MAT.cannotDeleteLastFile);
+  assert.equal(calls.answerCbQuery[0][0], MAT.cannotDeleteAllFiles);
 });
 
 // ── Media capture (onMedia) ────────────────────────────────────────────────

@@ -440,7 +440,7 @@ flowchart TD
     HUB --> HIST[History — /classhistory panel]
     HUB --> TEACH[Teachers editor:<br/>add / rename / type / remove]
     HUB --> TG[Training-groups editor:<br/>add / rename / remove / view roster]
-    HUB --> MAT[Teaching materials:<br/>add / send to group / preview + delete a file / remove]
+    HUB --> MAT[Teaching materials:<br/>add / send to group / multi-select preview + delete / remove]
     HUB --> OFF[Offline classes — o:root]
 ```
 
@@ -458,10 +458,11 @@ flowchart TD
   files; from the group hub a material's action is **send to the group** (the
   bot resends the file live into the class chat).
 - **Per-file management:** a lesson with more than one file offers a *manage
-  files* view where each file can be **previewed** (the bot resends just that
-  file) or **deleted** individually — so removing one attachment never means
-  re-uploading the rest. The last remaining file can't be deleted (remove the
-  whole lesson instead).
+  files* view — a **multi-select checkbox picker** (opens with nothing ticked).
+  Tick one or more files, then **preview** the selection (the bot resends just
+  those files) or **delete** it (with a confirm step) — so removing attachments
+  never means re-uploading the rest. Selecting *every* file is blocked (remove
+  the whole lesson instead).
 - The **offline** button points at the user-owned `o:root` entry (§11) — offline
   classes self-gate, so no group id is needed.
 
@@ -571,12 +572,12 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `pr:*` | Pending registrations / register widget | `actions/members.js` |
 | `h:*` | History browse & edit | `actions/history.js` |
 | `mg:*` | Admin control hub (`/manage`): members, pending, history, teachers, training groups | `actions/hub.js` |
-| `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; per-file `matfiles`/`matfprev`/`matfrm`/`matfrmx` preview or delete a single file; plus send-to-group / remove | `actions/materials.ts` |
+| `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; the per-file picker `matfiles`/`matftog`/`matfprev`/`matfrm`/`matfrmx` multi-selects files (mask in the callback) to preview or delete; plus send-to-group / remove | `actions/materials.ts` |
 | `mg:hw*` | Homework tracking from the `/manage` hub (list / item breakdown / tag non-submitters / remove) | `actions/homework.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
 | `o:tt*` | Weekly roster (timetable) from the offline class hub: add slot (type → teacher → day → time; `o:ttaddt`/`o:ttaddg`/`o:ttaddd`), bulk add (`o:ttbulk`), edit a slot's day (`o:tted`/`o:ttsd`) or time (`o:ttet`), assign teacher to a slot, week view, class timezone (`o:tttz*`, region pickers `o:tzr`/`o:tzp`) | `actions/timetable.ts` |
 | `o:mw` / `o:vtz*` / `o:vws*` | Per-viewer prefs for `/myweek`: refresh (`o:mw`), **view timezone** (`o:vtz*`, region pickers `o:vzr`/`o:vzp`) and **week start** (`o:vws*`), stored in `user_prefs` | `actions/timetable.ts` |
-| `o:mat*` | Teaching materials from the offline class hub (add / send to me / preview + delete a single file via `matfiles`/`matfprev`/`matfrm`/`matfrmx` / remove) | `actions/materials.ts` |
+| `o:mat*` | Teaching materials from the offline class hub (add / send to me / multi-select files to preview + delete via `matfiles`/`matftog`/`matfprev`/`matfrm`/`matfrmx` / remove) | `actions/materials.ts` |
 | `o:hw*` | Homework tracking from the offline class hub (add / per-student toggle / remove) | `actions/homework.ts` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |
 | `aw:cancel` | Cancel a text-reply prompt | `actions/manage.js` |

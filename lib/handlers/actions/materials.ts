@@ -220,38 +220,45 @@ function materialSessionView(surface: Surface, token: string, count: number, pro
   return { text: `${heading}\n\n${MAT.sessionCount(count)}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-// Per-file management: each file is a row with a preview button (its name;
-// tapping resends just that file) and a trash button (opens a delete confirm).
-function materialFilesView(surface: Surface, token: string, material: Material) {
+// Per-file management: a multi-select picker. Each file is a checkbox row
+// (bit i of the mask = file at index i); the two action buttons preview or
+// delete whichever files are checked. Selection is stateless — the mask rides
+// in the callback data. Opens with nothing selected so deletes are deliberate.
+function materialFilesView(surface: Surface, token: string, material: Material, mask: number) {
   const id = material.id;
-  const prevBase = surface === 'group' ? `mg:matfprev:${token}:${id}` : `o:matfprev:${token}:${id}`;
-  const rmBase = surface === 'group' ? `mg:matfrm:${token}:${id}` : `o:matfrm:${token}:${id}`;
+  const togBase = surface === 'group' ? `mg:matftog:${token}:${id}` : `o:matftog:${token}:${id}`;
+  const prevCb = surface === 'group' ? `mg:matfprev:${token}:${id}:${mask}` : `o:matfprev:${token}:${id}:${mask}`;
+  const rmCb = surface === 'group' ? `mg:matfrm:${token}:${id}:${mask}` : `o:matfrm:${token}:${id}:${mask}`;
   const backCb = surface === 'group' ? `mg:matit:${token}:${id}` : `o:matit:${token}:${id}`;
   const rows = material.files.map((f, i) => {
+    const checked = (mask >> i) & 1;
     const name = f.fileName || MAT.fileFallback(i + 1);
-    const label = `${TYPE_ICON[f.fileType]} ${name}`;
-    return [
-      Markup.button.callback(clampButtonLabel(label), `${prevBase}:${f.id}`),
-      Markup.button.callback(MAT.deleteFileButton, `${rmBase}:${f.id}`),
-    ];
+    const label = `${checked ? '☑️' : '⬜️'} ${TYPE_ICON[f.fileType]} ${name}`;
+    return [Markup.button.callback(clampButtonLabel(label), `${togBase}:${i}:${mask}`)];
   });
+  rows.push([
+    Markup.button.callback(MAT.previewSelectedButton, prevCb),
+    Markup.button.callback(MAT.deleteSelectedButton, rmCb),
+  ]);
   rows.push([Markup.button.callback(TEXT.backButton, backCb)]);
   rows.push(dismissRow());
   return { text: `${MAT.filesTitle(material.title)}\n\n${MAT.filesHint}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-// Confirm deleting a single file from a lesson.
-function materialFileRemoveConfirmView(surface: Surface, token: string, material: Material, file: MaterialFile, index: number) {
+// Confirm deleting the selected files from a lesson.
+function materialFileRemoveConfirmView(surface: Surface, token: string, material: Material, mask: number, files: MaterialFile[]) {
   const id = material.id;
-  const rmxCb = surface === 'group' ? `mg:matfrmx:${token}:${id}:${file.id}` : `o:matfrmx:${token}:${id}:${file.id}`;
+  const rmxCb = surface === 'group' ? `mg:matfrmx:${token}:${id}:${mask}` : `o:matfrmx:${token}:${id}:${mask}`;
   const backCb = surface === 'group' ? `mg:matfiles:${token}:${id}` : `o:matfiles:${token}:${id}`;
-  const name = file.fileName || MAT.fileFallback(index + 1);
+  const names = files
+    .map((f, i) => `• ${TYPE_ICON[f.fileType]} ${f.fileName || MAT.fileFallback(i + 1)}`)
+    .join('\n');
   const rows = [
-    [Markup.button.callback(MAT.confirmRemoveFileButton, rmxCb)],
+    [Markup.button.callback(MAT.confirmRemoveFilesButton, rmxCb)],
     [Markup.button.callback(TEXT.backButton, backCb)],
     dismissRow(),
   ];
-  return { text: MAT.fileRemoveConfirm(name), keyboard: Markup.inlineKeyboard(rows) };
+  return { text: MAT.filesRemoveConfirm(names), keyboard: Markup.inlineKeyboard(rows) };
 }
 
 function materialRemoveConfirmView(surface: Surface, token: string, material: Material) {
@@ -529,7 +536,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(material ? MAT.removedToast(material.title) : undefined);
   }
 
-  // ── Per-file management (offline): preview or delete a single file ─────────
+  // ── Per-file management (offline): preview or delete selected files ────────
 
   async function materialFilesOffline(ctx: Context): Promise<void> {
     const cls = await resolveOffline(ctx);
@@ -538,7 +545,21 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const material = await getMaterialById(cls.groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
     if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
-    const view = materialFilesView('offline', String(cls.rowId), material);
+    const view = materialFilesView('offline', String(cls.rowId), material, 0);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialFileToggleOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const idx = Number(m[3] ?? 0);
+    const mask = Number(m[4] ?? 0) ^ (1 << idx);
+    const material = await getMaterialById(cls.groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const view = materialFilesView('offline', String(cls.rowId), material, mask);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -548,18 +569,18 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(cls.groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    const file = material.files.find((f) => f.id === fileId);
-    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
     const chatId = ctx.chat?.id ?? ctx.from?.id;
     if (chatId === undefined) return;
     try {
-      await sendFiles(chatId, material.title, [file]);
-      await ctx.answerCbQuery(MAT.previewSent);
+      await sendFiles(chatId, material.title, files);
+      await ctx.answerCbQuery(MAT.previewSentMany(files.length));
     } catch (err) {
-      logTelegramError('materials.file.preview.offline', err, { gref: String(cls.rowId), materialId: id, fileId });
+      logTelegramError('materials.file.preview.offline', err, { gref: String(cls.rowId), materialId: id });
       await ctx.answerCbQuery(MAT.sendFailed);
     }
   }
@@ -569,14 +590,13 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(cls.groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    if (material.fileCount <= 1) { await ctx.answerCbQuery(MAT.cannotDeleteLastFile); return; }
-    const index = material.files.findIndex((f) => f.id === fileId);
-    const file = material.files[index];
-    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
-    const view = materialFileRemoveConfirmView('offline', String(cls.rowId), material, file, index);
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    if (files.length >= material.fileCount) { await ctx.answerCbQuery(MAT.cannotDeleteAllFiles); return; }
+    const view = materialFileRemoveConfirmView('offline', String(cls.rowId), material, mask, files);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -586,17 +606,21 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(cls.groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    if (material.fileCount <= 1) { await ctx.answerCbQuery(MAT.cannotDeleteLastFile); return; }
-    await removeMaterialFile(cls.groupId, material.id, fileId);
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    if (files.length >= material.fileCount) { await ctx.answerCbQuery(MAT.cannotDeleteAllFiles); return; }
+    for (const file of files) {
+      await removeMaterialFile(cls.groupId, material.id, file.id);
+    }
     const updated = await getMaterialById(cls.groupId, id);
     const view = updated && updated.fileCount > 1
-      ? materialFilesView('offline', String(cls.rowId), updated)
+      ? materialFilesView('offline', String(cls.rowId), updated, 0)
       : materialMenuView('offline', String(cls.rowId), updated ?? material);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
-    await ctx.answerCbQuery(MAT.fileRemovedToast);
+    await ctx.answerCbQuery(MAT.filesRemovedToast(files.length));
   }
 
   // ── Group /manage surface (mg:mat*) ────────────────────────────────────────
@@ -773,7 +797,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(material ? MAT.removedToast(material.title) : undefined);
   }
 
-  // ── Per-file management (group): preview or delete a single file ───────────
+  // ── Per-file management (group): preview or delete selected files ──────────
 
   async function materialFilesGroup(ctx: Context): Promise<void> {
     const groupId = await authorizeGroup(ctx);
@@ -782,7 +806,21 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const material = await getMaterialById(groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
     if (!material.fileCount) { await ctx.answerCbQuery(MAT.noFiles); return; }
-    const view = materialFilesView('group', groupId, material);
+    const view = materialFilesView('group', groupId, material, 0);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function materialFileToggleGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const id = m[2] ?? '';
+    const idx = Number(m[3] ?? 0);
+    const mask = Number(m[4] ?? 0) ^ (1 << idx);
+    const material = await getMaterialById(groupId, id);
+    if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
+    const view = materialFilesView('group', groupId, material, mask);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -792,17 +830,17 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    const file = material.files.find((f) => f.id === fileId);
-    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
     const chatId = ctx.chat?.id ?? groupId;
     try {
-      await sendFiles(chatId, material.title, [file]);
-      await ctx.answerCbQuery(MAT.previewSent);
+      await sendFiles(chatId, material.title, files);
+      await ctx.answerCbQuery(MAT.previewSentMany(files.length));
     } catch (err) {
-      logTelegramError('materials.file.preview.group', err, { groupId, materialId: id, fileId });
+      logTelegramError('materials.file.preview.group', err, { groupId, materialId: id });
       await ctx.answerCbQuery(MAT.sendFailed);
     }
   }
@@ -812,14 +850,13 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    if (material.fileCount <= 1) { await ctx.answerCbQuery(MAT.cannotDeleteLastFile); return; }
-    const index = material.files.findIndex((f) => f.id === fileId);
-    const file = material.files[index];
-    if (!file) { await ctx.answerCbQuery(MAT.fileMissing); return; }
-    const view = materialFileRemoveConfirmView('group', groupId, material, file, index);
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    if (files.length >= material.fileCount) { await ctx.answerCbQuery(MAT.cannotDeleteAllFiles); return; }
+    const view = materialFileRemoveConfirmView('group', groupId, material, mask, files);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -829,17 +866,21 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const id = m[2] ?? '';
-    const fileId = Number(m[3] ?? 0);
+    const mask = Number(m[3] ?? 0);
     const material = await getMaterialById(groupId, id);
     if (!material) { await ctx.answerCbQuery(MAT.missing); return; }
-    if (material.fileCount <= 1) { await ctx.answerCbQuery(MAT.cannotDeleteLastFile); return; }
-    await removeMaterialFile(groupId, material.id, fileId);
+    const files = selectedFiles(material, mask);
+    if (!files.length) { await ctx.answerCbQuery(MAT.selectNone); return; }
+    if (files.length >= material.fileCount) { await ctx.answerCbQuery(MAT.cannotDeleteAllFiles); return; }
+    for (const file of files) {
+      await removeMaterialFile(groupId, material.id, file.id);
+    }
     const updated = await getMaterialById(groupId, id);
     const view = updated && updated.fileCount > 1
-      ? materialFilesView('group', groupId, updated)
+      ? materialFilesView('group', groupId, updated, 0)
       : materialMenuView('group', groupId, updated ?? material);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
-    await ctx.answerCbQuery(MAT.fileRemovedToast);
+    await ctx.answerCbQuery(MAT.filesRemovedToast(files.length));
   }
 
   // ── Media capture: files added to an active upload session ─────────────────
@@ -955,6 +996,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialRemoveOffline,
     materialRemoveExecOffline,
     materialFilesOffline,
+    materialFileToggleOffline,
     materialFilePreviewOffline,
     materialFileRemoveOffline,
     materialFileRemoveExecOffline,
@@ -971,6 +1013,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     materialRemoveGroup,
     materialRemoveExecGroup,
     materialFilesGroup,
+    materialFileToggleGroup,
     materialFilePreviewGroup,
     materialFileRemoveGroup,
     materialFileRemoveExecGroup,
@@ -995,6 +1038,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:matrm:(\d+):(\d+)$/, h.materialRemoveOffline);
   bot.action(/^o:matrmx:(\d+):(\d+)$/, h.materialRemoveExecOffline);
   bot.action(/^o:matfiles:(\d+):(\d+)$/, h.materialFilesOffline);
+  bot.action(/^o:matftog:(\d+):(\d+):(\d+):(\d+)$/, h.materialFileToggleOffline);
   bot.action(/^o:matfprev:(\d+):(\d+):(\d+)$/, h.materialFilePreviewOffline);
   bot.action(/^o:matfrm:(\d+):(\d+):(\d+)$/, h.materialFileRemoveOffline);
   bot.action(/^o:matfrmx:(\d+):(\d+):(\d+)$/, h.materialFileRemoveExecOffline);
@@ -1013,6 +1057,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^mg:matrm:(-?\d+):(\d+)$/, h.materialRemoveGroup);
   bot.action(/^mg:matrmx:(-?\d+):(\d+)$/, h.materialRemoveExecGroup);
   bot.action(/^mg:matfiles:(-?\d+):(\d+)$/, h.materialFilesGroup);
+  bot.action(/^mg:matftog:(-?\d+):(\d+):(\d+):(\d+)$/, h.materialFileToggleGroup);
   bot.action(/^mg:matfprev:(-?\d+):(\d+):(\d+)$/, h.materialFilePreviewGroup);
   bot.action(/^mg:matfrm:(-?\d+):(\d+):(\d+)$/, h.materialFileRemoveGroup);
   bot.action(/^mg:matfrmx:(-?\d+):(\d+):(\d+)$/, h.materialFileRemoveExecGroup);
