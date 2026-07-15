@@ -235,6 +235,50 @@ function normalizeTime(raw: string): string | null {
   return `${hh}:${m[2]}`;
 }
 
+// Normalize an Arabic/Latin weekday token for matching: strip diacritics, unify
+// alef/hamza forms, drop a leading definite article, lowercase.
+function normalizeDayToken(s: string): string {
+  return s
+    .replace(/[\u064B-\u0652]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/^ال/, '')
+    .trim()
+    .toLowerCase();
+}
+
+// Maps a normalized weekday token → index (0=Sun..6=Sat), for bulk parsing.
+const DAY_LOOKUP: Record<string, number> = (() => {
+  const map: Record<string, number> = {};
+  (TT.weekdays as string[]).forEach((label, i) => { map[normalizeDayToken(label)] = i; });
+  const en: [string, number][] = [
+    ['sun', 0], ['sunday', 0], ['mon', 1], ['monday', 1], ['tue', 2], ['tuesday', 2],
+    ['wed', 3], ['wednesday', 3], ['thu', 4], ['thursday', 4], ['fri', 5], ['friday', 5],
+    ['sat', 6], ['saturday', 6],
+  ];
+  for (const [k, v] of en) map[k] = v;
+  return map;
+})();
+
+function parseWeekday(token: string): number | null {
+  const key = normalizeDayToken(token);
+  return key in DAY_LOOKUP ? (DAY_LOOKUP[key] as number) : null;
+}
+
+// Parse one bulk line ("اليوم الوقت", any order) into a day+time, or null.
+function parseBulkSlotLine(line: string): { dayOfWeek: number; time: string } | null {
+  const tokens = line.trim().split(/[\s,،]+/).filter(Boolean);
+  if (tokens.length < 2) return null;
+  const timeTok = tokens.find((t) => /^\d{1,2}:\d{2}$/.test(t));
+  if (!timeTok) return null;
+  const time = normalizeTime(timeTok);
+  if (!time) return null;
+  const dayTok = tokens.find((t) => t !== timeTok);
+  if (dayTok === undefined) return null;
+  const day = parseWeekday(dayTok);
+  if (day === null) return null;
+  return { dayOfWeek: day, time };
+}
+
 function canManage(role: string): boolean {
   return role === 'owner' || role === 'operator';
 }
@@ -341,6 +385,7 @@ function pickDayView(cls: ManageableClass, type: string) {
     if (d + 1 < 7) row.push(Markup.button.callback(dayLabel(d + 1), `o:ttaddd:${g}:${type}:${d + 1}`));
     rows.push(row);
   }
+  rows.push([Markup.button.callback(TT.bulkButton, `o:ttbulk:${g}:${type}`)]);
   rows.push([Markup.button.callback(TEXT.backButton, `o:ttadd:${g}`), ...dismissRow()]);
   return { text: TT.pickDay, keyboard: Markup.inlineKeyboard(rows) };
 }
@@ -743,6 +788,20 @@ export function createHandlers({ storage }: { storage: Storage }) {
     });
   }
 
+  // Bulk add: one type chosen, then paste many "day time" lines at once.
+  async function addBulkPrompt(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const type = readMatch(ctx)[2] ?? '';
+    if (!SCHEDULE_TYPES.includes(type)) { await ctx.answerCbQuery(TT.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'timetableBulk', gref: String(cls.rowId), sessionType: type },
+      sendPrompt: () => ctx.reply(TT.bulkPrompt(typeLabel(type)), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
+  }
+
   async function slotMenu(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
@@ -824,7 +883,49 @@ export function createHandlers({ storage }: { storage: Storage }) {
     if (!msg || !replyTo) return next();
     const chatKey = String(ctx.chat.id);
     const pending = await getReplyPrompt(chatKey, replyTo.message_id);
-    if (!pending || pending.action !== 'timetableTime' || !pending.groupId) return next();
+    if (!pending || !pending.groupId) return next();
+    if (pending.action !== 'timetableTime' && pending.action !== 'timetableBulk') return next();
+
+    // Refresh the originating panel to the (now longer) list.
+    const refreshPanel = async (): Promise<void> => {
+      if (pending.chatId === undefined || pending.msgId === undefined) return;
+      const cls = await resolveManageableClass(String(pending.gref ?? ''), ctx.from?.id ?? '');
+      if (!cls) return;
+      const slots = await listScheduleSlots(cls.groupId);
+      const timezone = await getClassTimezone(cls.groupId);
+      const view = panelView(cls, slots, timezone, canManage(cls.role));
+      try {
+        await ctx.telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
+          parse_mode: 'Markdown', ...view.keyboard,
+        });
+      } catch (err) {
+        logTelegramError('timetable.add.refreshPanel', err, { chatId: chatKey, messageId: pending.msgId });
+      }
+    };
+
+    if (pending.action === 'timetableBulk') {
+      const lines = (msg.text ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+      let added = 0;
+      const failed: string[] = [];
+      for (const line of lines) {
+        const parsed = parseBulkSlotLine(line);
+        if (!parsed) { failed.push(line); continue; }
+        await addScheduleSlot(pending.groupId, {
+          sessionType: String(pending.sessionType),
+          dayOfWeek: parsed.dayOfWeek,
+          timeOfDay: parsed.time,
+          teacherId: null,
+        });
+        added += 1;
+      }
+      await delReplyPrompt(chatKey, replyTo.message_id);
+      const parts: string[] = [];
+      if (added) parts.push(TT.bulkAdded(added));
+      if (failed.length) parts.push(`${TT.bulkFailedHeader}\n${failed.map((f) => `• ${f}`).join('\n')}`);
+      await replyEphemeral(ctx, parts.length ? parts.join('\n\n') : TT.bulkNone);
+      await refreshPanel();
+      return;
+    }
 
     const time = normalizeTime(msg.text ?? '');
     if (!time) {
@@ -840,21 +941,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
       teacherId: null,
     });
     await replyEphemeral(ctx, TT.slotAdded);
-
-    // Refresh the originating panel to the (now longer) list.
-    if (pending.chatId === undefined || pending.msgId === undefined) return;
-    const cls = await resolveManageableClass(String(pending.gref ?? ''), ctx.from?.id ?? '');
-    if (!cls) return;
-    const slots = await listScheduleSlots(cls.groupId);
-    const timezone = await getClassTimezone(cls.groupId);
-    const view = panelView(cls, slots, timezone, canManage(cls.role));
-    try {
-      await ctx.telegram.editMessageText(pending.chatId, pending.msgId, undefined, view.text, {
-        parse_mode: 'Markdown', ...view.keyboard,
-      });
-    } catch (err) {
-      logTelegramError('timetable.add.refreshPanel', err, { chatId: chatKey, messageId: pending.msgId });
-    }
+    await refreshPanel();
   }
 
   return {
@@ -874,6 +961,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
     addPickType,
     addPickDay,
     addPromptTime,
+    addBulkPrompt,
     slotMenu,
     assignTeacherMenu,
     assignTeacher,
@@ -904,6 +992,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:ttadd:(\d+)$/, h.addPickType);
   bot.action(/^o:ttaddt:(\d+):([a-zA-Z]+)$/, h.addPickDay);
   bot.action(/^o:ttaddd:(\d+):([a-zA-Z]+):(\d+)$/, h.addPromptTime);
+  bot.action(/^o:ttbulk:(\d+):([a-zA-Z]+)$/, h.addBulkPrompt);
   bot.action(/^o:ttslot:(\d+):(\d+)$/, h.slotMenu);
   bot.action(/^o:ttasg:(\d+):(\d+)$/, h.assignTeacherMenu);
   bot.action(/^o:ttasgd:(\d+):(\d+):(\d+)$/, h.assignTeacher);

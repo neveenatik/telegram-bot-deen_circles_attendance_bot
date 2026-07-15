@@ -82,6 +82,67 @@ test('addPickDay: shows all seven weekdays', async () => {
   assert.equal(data.length, 7);
 });
 
+test('addPickDay: offers a bulk-add button', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddt:5:main', '5', 'main'] });
+  await handlers(ttStorage()).addPickDay(ctx);
+  assert.ok(editData(calls).includes('o:ttbulk:5:main'));
+});
+
+test('addBulkPrompt: stores a timetableBulk reply prompt', async () => {
+  const prompts = [];
+  const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:main', '5', 'main'] });
+  await handlers(store).addBulkPrompt(ctx);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'timetableBulk');
+  assert.equal(prompts[0].sessionType, 'main');
+});
+
+test('onMessage: a bulk reply creates one slot per valid line and refreshes', async () => {
+  const added = [];
+  const store = ttStorage({
+    getReplyPrompt: async () => ({ action: 'timetableBulk', groupId: 'offline:o:1', gref: '5', sessionType: 'main', chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    addScheduleSlot: async (g, slot) => { added.push(slot); return added.length; },
+  });
+  const telegram = makeTelegram();
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER },
+    message: { message_id: 601, text: 'الأحد 10:00\nالثلاثاء 17:30\nالخميس 9:05', reply_to_message: { message_id: 600 } },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 602 }); },
+  };
+  let nextCalled = false;
+  await handlers(store).onMessage(ctx, async () => { nextCalled = true; });
+  assert.equal(nextCalled, false);
+  assert.deepEqual(added.map((s) => [s.dayOfWeek, s.timeOfDay]), [[0, '10:00'], [2, '17:30'], [4, '09:05']]);
+  assert.equal(telegram.calls.editMessageText.length, 1);
+});
+
+test('onMessage: bulk reports lines it could not parse', async () => {
+  const added = [];
+  const store = ttStorage({
+    getReplyPrompt: async () => ({ action: 'timetableBulk', groupId: 'offline:o:1', gref: '5', sessionType: 'main', chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    addScheduleSlot: async (g, slot) => { added.push(slot); return added.length; },
+  });
+  const telegram = makeTelegram();
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER },
+    message: { message_id: 601, text: 'الأحد 10:00\nنجمة غير صحيحة', reply_to_message: { message_id: 600 } },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 602 }); },
+  };
+  await handlers(store).onMessage(ctx, async () => {});
+  assert.equal(added.length, 1);
+  const replyText = calls.reply[0][0];
+  assert.match(replyText, /نجمة غير صحيحة/);
+});
+
 test('addPromptTime: stores a timetableTime reply prompt', async () => {
   const prompts = [];
   const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
