@@ -25,6 +25,39 @@ test('start: admin gets the admin help text', async () => {
   assert.equal(calls.replyWithMarkdown[0][0], TEXT.help(true));
 });
 
+test('start: a plain /start in DM welcomes the user (no admin-only error)', async () => {
+  const { start } = createHandlers({ storage: makeStorage() });
+  const { ctx, calls } = makeCtx({ chatType: 'private' });
+
+  await start(ctx, async () => {});
+
+  assert.equal(calls.reply.length, 0); // no adminOnly ephemeral
+  assert.equal(calls.replyWithMarkdown[0][0], TEXT.help(false));
+});
+
+test('start: an offline deep link in DM yields to the offline handler', async () => {
+  const { start } = createHandlers({ storage: makeStorage() });
+  const { ctx, calls } = makeCtx({ chatType: 'private' });
+  ctx.startPayload = 'offline';
+
+  let nextCalled = false;
+  await start(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, true);
+  assert.equal(calls.replyWithMarkdown.length, 0);
+});
+
+test('start: a student join deep link in DM yields to the student handler', async () => {
+  const { start } = createHandlers({ storage: makeStorage() });
+  const { ctx } = makeCtx({ chatType: 'private' });
+  ctx.startPayload = 'hw-5-2';
+
+  let nextCalled = false;
+  await start(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, true);
+});
+
 test('help: always replies, with admin flag reflecting membership', async () => {
   const { help } = createHandlers({ storage: makeStorage() });
   const { ctx, calls } = makeCtx({ admin: true });
