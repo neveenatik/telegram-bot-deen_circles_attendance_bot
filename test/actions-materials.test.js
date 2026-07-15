@@ -349,6 +349,65 @@ test('onMedia: a later file appends to the open lesson without a caption', async
   assert.equal(prompts[0].rec.count, 2);
 });
 
+test('onMedia: an uncaptioned album photo falls back to the lesson title when no part is set', async () => {
+  const files = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'عنوان المادة', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push(f); return 4; },
+    setReplyPrompt: async () => {},
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  // A photo has no filename, and album items after the first carry no caption.
+  const { ctx } = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'PIMG' }] });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(files.length, 1);
+  assert.equal(files[0].fileType, 'photo');
+  // No caption, no part, no filename -> falls back to the lesson title (not "file N").
+  assert.equal(files[0].fileName, 'عنوان المادة');
+});
+
+test('onMedia: an uncaptioned file inherits the current part name (last caption)', async () => {
+  const files = [];
+  const storage = matStorage({
+    // A prior captioned file set the part name to "النطق" (pronunciation).
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', lastCaption: 'النطق', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push(f); return 4; },
+    setReplyPrompt: async () => {},
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'PIMG' }] });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(files.length, 1);
+  // Inherits the part name, not the lesson title.
+  assert.equal(files[0].fileName, 'النطق');
+});
+
+test('onMedia: a captioned file starts a new part that later files inherit', async () => {
+  const files = [];
+  const prompts = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', lastCaption: 'النطق', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push(f); return 4; },
+    setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); },
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  // A new captioned photo opens the "الكتابة" (writing) part.
+  const { ctx } = mediaCtx({ caption: 'الكتابة', document: null, photo: [{ file_id: 'PIMG' }] });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(files[0].fileName, 'الكتابة');
+  // The session now remembers the new part name for subsequent uncaptioned files.
+  assert.equal(prompts[0].rec.lastCaption, 'الكتابة');
+});
+
 test('onMedia: a later file caption becomes that file\'s name', async () => {
   const files = [];
   const storage = matStorage({

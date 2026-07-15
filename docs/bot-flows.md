@@ -398,7 +398,12 @@ One action reads a **file** instead of text: uploading a teaching material. It
 reuses the same force-reply record (`action: 'materialUpload'`), but because
 `onText` only fires for text messages, a sibling media handler
 (`bot.on(['document','photo','video','audio'])`) consumes the reply, reads the
-`file_id`, and uses the message caption as the title (single-step add).
+`file_id`, and uses the message caption as the title (single-step add). A
+session stays open so several files (or albums) can be appended; the first
+file's caption is the lesson title, and each captioned file starts a new
+"part" whose name later uncaptioned items (e.g. the rest of an album, which
+carry no caption) inherit — so a batch of files shares one readable name
+instead of `file 1`, `file 2`, ….
 
 ---
 

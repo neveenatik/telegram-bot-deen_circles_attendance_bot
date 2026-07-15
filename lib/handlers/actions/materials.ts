@@ -62,6 +62,9 @@ interface ReplyPromptRecord {
   materialId?: number | null;
   title?: string | null;
   count?: number;
+  // The most recent caption typed in this session — the current "part" name.
+  // Uncaptioned files (e.g. later items of the same album) inherit it.
+  lastCaption?: string | null;
   chatId?: number | string;
   msgId?: number;
   promptMsgId?: number;
@@ -889,8 +892,10 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   // running count + Done. Files are captured whether or not they reply to the
   // prompt, so sending several at once (an album — where only the first item
   // carries reply_to) appends every file, not just one. The first file of a NEW
-  // lesson sets its title (its caption, or the attachment filename); every
-  // file's caption also names that file. Done closes the session.
+  // lesson sets its title (its caption, or the attachment filename); a captioned
+  // file starts a new "part" and later uncaptioned items inherit that part's
+  // name (falling back to the lesson title) so they aren't left as "file N".
+  // Done closes the session.
 
   async function onMedia(ctx: Context, next: () => Promise<void>): Promise<void> {
     const msg = ctx.message as UploadedMessage | undefined;
@@ -919,9 +924,12 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     let materialId = pending.materialId ?? null;
     let title = pending.title ?? null;
     let count = pending.count ?? 0;
-    // The caption typed on this file names the file itself (falling back to the
-    // attachment's own filename). On the first file it doubles as the lesson title.
+    // The caption typed on this file names the file itself. Sending a batch
+    // (album) only carries a caption on the first item, so a non-empty caption
+    // starts a new "part" whose name later uncaptioned items inherit.
     const caption = (msg.caption ?? '').trim();
+    let partName = pending.lastCaption ?? null;
+    if (caption) partName = caption;
 
     if (!materialId) {
       // First file of a new lesson: its caption (or filename) is the title.
@@ -944,7 +952,11 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await addMaterialFile(materialId, {
       fileId: file.fileId,
       fileType: file.fileType,
-      fileName: caption || file.fileName,
+      // Name the file by its own caption, then the current part name (the last
+      // caption typed in this session), then its attachment filename, and
+      // finally the lesson title — so every file of a captioned batch shares
+      // that part's name instead of a "file N" placeholder.
+      fileName: caption || partName || file.fileName || title,
     });
     count += 1;
 
@@ -958,6 +970,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       materialId,
       title,
       count,
+      lastCaption: partName,
       userId: pending.userId,
       chatId: pending.chatId,
       msgId: pending.msgId,
