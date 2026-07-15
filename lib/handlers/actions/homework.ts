@@ -131,6 +131,7 @@ interface Storage {
   getHomeworkBySourceMessage(groupId: string, sourceMessageId: number): Promise<HomeworkItem | null>;
   addHomework(groupId: string, homework: { title: string; sourceMessageId: number | null; postedBy: string | null }): Promise<number | null>;
   removeHomework(groupId: string, homeworkId: string): Promise<void>;
+  renameHomework(groupId: string, homeworkId: string, title: string): Promise<void>;
   addHomeworkFile(homeworkId: number, file: { fileId: string; fileType: FileType; fileName: string | null }): Promise<number | null>;
   setHomeworkContent(groupId: string, homeworkId: string, content: string | null): Promise<void>;
   // Submissions.
@@ -229,6 +230,23 @@ function readMatch(ctx: Context): RegExpExecArray {
   return m ?? ([] as unknown as RegExpExecArray);
 }
 
+// Students per page in the offline item roster (keeps the keyboard within
+// Telegram's limits so the action buttons below always render).
+const HW_STUDENTS_PAGE_SIZE = 8;
+
+// Order roster members by their stable list number (ascending); anyone without
+// a number sorts last, alphabetically (Arabic).
+function sortRosterMembers(members: MemberWithId[]): MemberWithId[] {
+  return [...members].sort((a, b) => {
+    const la = a.listNumber;
+    const lb = b.listNumber;
+    if (la == null && lb == null) return String(a.name).localeCompare(String(b.name), 'ar');
+    if (la == null) return 1;
+    if (lb == null) return -1;
+    return la - lb;
+  });
+}
+
 function dismissRow() {
   return [Markup.button.callback(TEXT.closeButton, 'msg:dismiss')];
 }
@@ -295,7 +313,7 @@ function homeworkGroupItemView(groupId: string, item: HomeworkItem, roster: Rost
 }
 
 // Offline item detail: one toggle button per student cycling ⬜️ → 📝 → ✅ → ⬜️.
-function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: MemberWithId[], submissions: Submission[]) {
+function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: MemberWithId[], submissions: Submission[], page = 0) {
   const stateByMember = new Map<number, Submission>();
   for (const s of submissions) {
     if (s.memberId !== null) stateByMember.set(s.memberId, s);
@@ -303,17 +321,35 @@ function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: Memb
   const total = members.length;
   const { submitted, reviewed, resubmitted } = tallySubmissions(submissions);
 
+  // Order by the stable list number teachers know (students without one sort
+  // last, alphabetically), then paginate so a large roster never overflows the
+  // keyboard (which would silently drop the action buttons below it).
+  const sorted = sortRosterMembers(members);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / HW_STUDENTS_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const start = safePage * HW_STUDENTS_PAGE_SIZE;
+  const slice = sorted.slice(start, start + HW_STUDENTS_PAGE_SIZE);
+
   const rows = [];
-  for (const m of members) {
+  for (const m of slice) {
     const s = stateByMember.get(m.id);
+    const num = m.listNumber != null ? `${m.listNumber}. ` : '';
     rows.push([Markup.button.callback(
-      clampButtonLabel(`${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${m.name}`),
-      `o:hwtog:${gref}:${item.id}:${m.id}`,
+      clampButtonLabel(`${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${num}${m.name}`),
+      `o:hwtog:${gref}:${item.id}:${m.id}:${safePage}`,
     )]);
+  }
+  if (totalPages > 1) {
+    rows.push([
+      ...(safePage > 0 ? [Markup.button.callback(TEXT.navigationPrevButton, `o:hwit:${gref}:${item.id}:${safePage - 1}`)] : []),
+      Markup.button.callback(`📄 ${safePage + 1}/${totalPages}`, 'o:noop'),
+      ...(safePage < totalPages - 1 ? [Markup.button.callback(TEXT.navigationNextButton, `o:hwit:${gref}:${item.id}:${safePage + 1}`)] : []),
+    ]);
   }
   // Content management (teacher's assignment material): set/clear text, attach
   // media, and send the whole content to the manager's own chat to preview.
   rows.push([
+    Markup.button.callback(HW.renameButton, `o:hwren:${gref}:${item.id}`),
     Markup.button.callback(HW.setTextButton, `o:hwtext:${gref}:${item.id}`),
     Markup.button.callback(HW.attachButton, `o:hwatt:${gref}:${item.id}`),
   ]);
@@ -440,6 +476,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     getHomeworkBySourceMessage,
     addHomework,
     removeHomework,
+    renameHomework,
     addHomeworkFile,
     setHomeworkContent,
     getSubmissions,
@@ -573,6 +610,23 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
         await delReplyPrompt(chatKey, promptMsgId);
         await setHomeworkContent(pending.groupId, itemId, body);
         await replyEphemeral(ctx, body ? HW.textSaved : HW.textCleared);
+        if (pending.chatId !== undefined && pending.msgId !== undefined) {
+          await refreshOfflineItemPanel(pending.chatId, pending.msgId, pending.groupId, String(pending.gref ?? ''), itemId);
+        }
+        return;
+      }
+
+      if (pending.action === 'homeworkRename') {
+        const itemId = String(pending.itemId ?? '');
+        const title = (msg.text ?? '').trim();
+        if (!title) {
+          // Keep the prompt open so she can retype a title.
+          await replyEphemeral(ctx, HW.renameEmpty);
+          return;
+        }
+        await delReplyPrompt(chatKey, promptMsgId);
+        await renameHomework(pending.groupId, itemId, title);
+        await replyEphemeral(ctx, HW.renamed(title), { parse_mode: 'Markdown' });
         if (pending.chatId !== undefined && pending.msgId !== undefined) {
           await refreshOfflineItemPanel(pending.chatId, pending.msgId, pending.groupId, String(pending.gref ?? ''), itemId);
         }
@@ -892,15 +946,31 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const cls = await resolveOffline(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const id = readMatch(ctx)[2] ?? '';
+    const page = Number(readMatch(ctx)[3] ?? 0) || 0;
     const item = await getHomeworkById(cls.groupId, id);
     if (!item) { await ctx.answerCbQuery(HW.missing); return; }
     const [members, submissions] = await Promise.all([
       getMembersWithIds(cls.groupId),
       getSubmissions(item.id),
     ]);
-    const view = homeworkOfflineItemView(String(cls.rowId), item, members, submissions);
+    const view = homeworkOfflineItemView(String(cls.rowId), item, members, submissions, page);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  // Rename a homework item's title via a force-reply (action 'homeworkRename').
+  async function homeworkRenameOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const id = readMatch(ctx)[2] ?? '';
+    const item = await getHomeworkById(cls.groupId, id);
+    if (!item) { await ctx.answerCbQuery(HW.missing); return; }
+    await beginForceReplyAwaiting(ctx, {
+      setReplyPrompt,
+      groupId: cls.groupId,
+      record: { action: 'homeworkRename', surface: 'offline', gref: String(cls.rowId), itemId: item.id },
+      sendPrompt: () => ctx.reply(HW.renamePrompt(escapeTelegramMarkdown(item.title)), { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
+    });
   }
 
   // Set (or clear) a homework item's text body via a force-reply. The reply is
@@ -1055,6 +1125,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const id = readMatch(ctx)[2] ?? '';
     const memberId = Number(readMatch(ctx)[3] ?? '');
+    const page = Number(readMatch(ctx)[4] ?? 0) || 0;
     const item = await getHomeworkById(cls.groupId, id);
     if (!item) { await ctx.answerCbQuery(HW.missing); return; }
 
@@ -1067,7 +1138,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       getMembersWithIds(cls.groupId),
       getSubmissions(item.id),
     ]);
-    const view = homeworkOfflineItemView(String(cls.rowId), item, members, submissions);
+    const view = homeworkOfflineItemView(String(cls.rowId), item, members, submissions, page);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
@@ -1126,6 +1197,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     homeworkOffline,
     homeworkAddOffline,
     homeworkItemOffline,
+    homeworkRenameOffline,
     homeworkSetTextOffline,
     homeworkAttachOffline,
     homeworkAttachDoneOffline,
@@ -1155,7 +1227,8 @@ export function register(bot: BotLike, storage: Storage): void {
   // Offline class surface (numeric gref token).
   bot.action(/^o:hw:(\d+)$/, h.homeworkOffline);
   bot.action(/^o:hwadd:(\d+)$/, h.homeworkAddOffline);
-  bot.action(/^o:hwit:(\d+):(\d+)$/, h.homeworkItemOffline);
+  bot.action(/^o:hwit:(\d+):(\d+)(?::(\d+))?$/, h.homeworkItemOffline);
+  bot.action(/^o:hwren:(\d+):(\d+)$/, h.homeworkRenameOffline);
   bot.action(/^o:hwtext:(\d+):(\d+)$/, h.homeworkSetTextOffline);
   bot.action(/^o:hwatt:(\d+):(\d+)$/, h.homeworkAttachOffline);
   bot.action(/^o:hwattdone:(\d+):(\d+):(\d+)$/, h.homeworkAttachDoneOffline);
@@ -1163,7 +1236,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:hwsubs:(\d+):(\d+)$/, h.homeworkSubmissionsOffline);
   bot.action(/^o:hwsub:(\d+):(\d+):(\d+)$/, h.homeworkSubmissionDetailOffline);
   bot.action(/^o:hwreply:(\d+):(\d+):(\d+)$/, h.homeworkReplyOffline);
-  bot.action(/^o:hwtog:(\d+):(\d+):(\d+)$/, h.homeworkToggleOffline);
+  bot.action(/^o:hwtog:(\d+):(\d+):(\d+)(?::(\d+))?$/, h.homeworkToggleOffline);
   bot.action(/^o:hwrep:(\d+)$/, h.homeworkReportOffline);
   bot.action(/^o:hwrm:(\d+):(\d+)$/, h.homeworkRemoveOffline);
   bot.action(/^o:hwrmx:(\d+):(\d+)$/, h.homeworkRemoveExecOffline);

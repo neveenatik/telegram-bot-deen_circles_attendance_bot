@@ -314,6 +314,7 @@ function offlineStorage(overrides = {}) {
     getSubmissions: async () => [],
     addHomework: async () => 2,
     removeHomework: async () => {},
+    renameHomework: async () => {},
     addHomeworkFile: async () => 11,
     setHomeworkContent: async () => {},
     setSubmissionState: async () => true,
@@ -372,10 +373,64 @@ test('offline panel: item detail lists a toggle button per student', async () =>
   await h.homeworkItemOffline(ctx);
 
   const data = editData(calls);
-  assert.ok(data.includes('o:hwtog:5:1:7'));
-  assert.ok(data.includes('o:hwtog:5:1:8'));
+  assert.ok(data.includes('o:hwtog:5:1:7:0'));
+  assert.ok(data.includes('o:hwtog:5:1:8:0'));
   assert.ok(data.includes('o:hwrm:5:1'));
   assert.ok(data.includes('o:hw:5'));
+});
+
+test('offline panel: item detail orders students by list number and shows the number', async () => {
+  const storage = offlineStorage({
+    // Deliberately out of order; expect list-number ordering (2 then 5).
+    getMembersWithIds: async () => [
+      { id: 8, name: 'زينب', userId: null, listNumber: 5 },
+      { id: 7, name: 'فاطمة', userId: null, listNumber: 2 },
+    ],
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const studentBtns = kb.flat().filter((b) => /^o:hwtog:/.test(b.callback_data));
+  // Member 7 (list 2) before member 8 (list 5).
+  assert.deepEqual(studentBtns.map((b) => b.callback_data), ['o:hwtog:5:1:7:0', 'o:hwtog:5:1:8:0']);
+  assert.match(studentBtns[0].text, /2\./); // list number shown
+});
+
+test('offline panel: item detail paginates a large roster', async () => {
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `طالبة ${i + 1}`, userId: null, listNumber: i + 1 }));
+  const storage = offlineStorage({ getMembersWithIds: async () => many });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const studentBtns = kb.flat().filter((b) => /^o:hwtog:/.test(b.callback_data));
+  assert.equal(studentBtns.length, 8); // one page
+  const data = kb.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:hwit:5:1:1')); // next-page nav
+  assert.ok(data.includes('o:hwrm:5:1'));   // action buttons still present
+});
+
+test('offline panel: toggling on a later page stays on that page', async () => {
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `طالبة ${i + 1}`, userId: null, listNumber: i + 1 }));
+  const storage = offlineStorage({ getMembersWithIds: async () => many, getSubmissions: async () => [] });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwtog:5:1:12:1', '5', '1', '12', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkToggleOffline(ctx);
+
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  // Page 1 shows students 9..16 and its nav back to page 0 / forward to page 2.
+  assert.ok(data.some((c) => /^o:hwtog:5:1:12:1$/.test(c)));
+  assert.ok(data.includes('o:hwit:5:1:0'));
+  assert.ok(data.includes('o:hwit:5:1:2'));
 });
 
 // ── Offline homework content (text body + attached media) ────────────────────
@@ -392,6 +447,54 @@ test('offline panel: item detail exposes content buttons (set text + attach)', a
   assert.ok(data.includes('o:hwatt:5:1'));
   // No content yet → no "send content to me" button.
   assert.ok(!data.includes('o:hwview:5:1'));
+});
+
+test('offline panel: item detail exposes an edit-title button', async () => {
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwit:5:1', '5', '1'] });
+  const h = createHandlers({ storage: offlineStorage(), telegram });
+
+  await h.homeworkItemOffline(ctx);
+
+  assert.ok(editData(calls).includes('o:hwren:5:1'));
+});
+
+test('offline panel: edit-title stores a homeworkRename reply prompt', async () => {
+  const prompts = [];
+  const storage = offlineStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
+  const telegram = makeTelegram();
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwren:5:1', '5', '1'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkRenameOffline(ctx);
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].action, 'homeworkRename');
+  assert.equal(prompts[0].itemId, 1);
+  assert.equal(prompts[0].gref, '5');
+});
+
+test('listener: a homeworkRename reply updates the title and refreshes the panel', async () => {
+  const renamed = [];
+  const storage = listenerStorage({
+    getReplyPrompt: async () => ({ action: 'homeworkRename', surface: 'offline', groupId: 'offline:o:1', gref: '5', itemId: 1, chatId: 777, msgId: 600, promptMsgId: 600 }),
+    delReplyPrompt: async () => {},
+    renameHomework: async (g, id, title) => { renamed.push([g, id, title]); },
+    getHomeworkById: async (_g, id) => ({ id: Number(id), title: 'العنوان الجديد', content: null, sourceMessageId: null, postedBy: null, createdAt: null, files: [], fileCount: 0 }),
+    getMembersWithIds: async () => [],
+    getSubmissions: async () => [],
+  });
+  const { telegram } = telegramRec();
+  const h = createHandlers({ storage, telegram });
+  const { ctx } = msgCtx({ chatType: 'private', chatId: 777, userId: OWNER, text: 'العنوان الجديد', replyToId: 600 });
+
+  let nextCalled = false;
+  await h.onHomeworkMessage(ctx, async () => { nextCalled = true; });
+
+  assert.equal(nextCalled, false);
+  assert.equal(renamed.length, 1);
+  assert.deepEqual([renamed[0][0], String(renamed[0][1]), renamed[0][2]], ['offline:o:1', '1', 'العنوان الجديد']);
+  assert.equal(telegram.calls.editMessageText.length, 1); // panel refreshed
 });
 
 test('offline panel: item with content shows the view-content button', async () => {
