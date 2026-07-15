@@ -96,7 +96,7 @@ test('listener: a homeworkteacher (non-admin) may post assignments', async () =>
   const added = [];
   const storage = listenerStorage({
     addHomework: async (g, hw) => { added.push([g, hw]); return 10; },
-    getTeachers: async () => [{ id: 1, userId: String(STUDENT), name: 'أستاذة', type: 'homeworkteacher' }],
+    getTeachers: async () => [{ id: 1, userId: String(STUDENT), name: 'أستاذة', types: ['homeworkteacher'] }],
   });
   const { telegram } = telegramRec({ getChatMember: async () => ({ status: 'member' }) });
   const h = createHandlers({ storage, telegram });

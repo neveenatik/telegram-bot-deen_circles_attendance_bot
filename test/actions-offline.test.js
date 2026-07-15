@@ -31,7 +31,7 @@ function offlineStorage(overrides = {}) {
       { userId: 'offline:u1', name: 'مريم', listNumber: 1 },
       { userId: 'offline:u2', name: 'خديجة', listNumber: 2 },
     ] }),
-    getTeachers: async () => [{ id: 7, userId: 'offline:t1', name: 'أمل', type: 'courseteacher' }],
+    getTeachers: async () => [{ id: 7, userId: 'offline:t1', name: 'أمل', types: ['courseteacher'] }],
     getSessions: async () => [],
     saveSessions: async () => {},
     getAllSessions: async () => [],
@@ -261,7 +261,7 @@ test('assignTeacher: assigns the picked teacher to the session', async () => {
   const store = offlineStorage({
     getAllSessions: async () => [{ id: 'sid-1', seriesId: 1, type: 'main', name: 'حلقة', startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:00:00Z', participants: {} }],
     assignSessionTeacher: async (gid, sessionId, teacherId) => { assigned = { gid, sessionId, teacherId }; return { ok: true }; },
-    getSessionTeacher: async () => ({ id: 7, name: 'أمل', type: 'courseteacher' }),
+    getSessionTeacher: async () => ({ id: 7, name: 'أمل', types: ['courseteacher'] }),
   });
   const { assignTeacher } = handlers(store);
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:asg:5:1:1:7', '5', '1', '1', '7'] });
@@ -441,17 +441,17 @@ test('teacherTypeMenu: lists the types and marks the current one', async () => {
   assert.match(current.text, /✅/); // current type is marked
 });
 
-test('setTeacherType: changes the type and refreshes the teacher menu', async () => {
+test('setTeacherType: toggles a role and refreshes the roles menu', async () => {
   let changed = null;
   const store = offlineStorage({
-    setOfflineTeacherType: async (gid, id, type) => { changed = { gid, id, type }; return { ok: true, name: 'أمل', type }; },
-    getTeachers: async () => [{ id: 7, userId: 'offline:t1', name: 'أمل', type: 'trainingteacher' }],
+    setOfflineTeacherTypes: async (gid, id, types) => { changed = { gid, id, types }; return { ok: true, name: 'أمل', types }; },
+    getTeachers: async () => [{ id: 7, userId: 'offline:t1', name: 'أمل', types: ['courseteacher'] }],
   });
   const { setTeacherType } = handlers(store);
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttset:5:7:trainingteacher', '5', '7', 'trainingteacher'] });
   await setTeacherType(ctx);
   assert.equal(changed.id, '7');
-  assert.equal(changed.type, 'trainingteacher');
+  assert.deepEqual(changed.types, ['courseteacher', 'trainingteacher']);
   assert.equal(calls.editMessageText.length, 1);
 });
 

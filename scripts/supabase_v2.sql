@@ -88,12 +88,17 @@ create table if not exists teachers (
   group_id bigint not null references groups(id) on delete cascade,
   telegram_user_id text not null,
   name text not null,
-  teacher_type text not null,
+  -- A teacher may hold several roles at once (recitation + training + main…),
+  -- so roles are a non-empty set drawn from the valid role names.
+  teacher_types text[] not null,
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (group_id, telegram_user_id),
-  check (teacher_type in ('courseteacher', 'trainingteacher', 'recitationteacher', 'homeworkteacher'))
+  constraint teachers_teacher_types_check check (
+    array_length(teacher_types, 1) >= 1
+    and teacher_types <@ array['courseteacher', 'trainingteacher', 'recitationteacher', 'homeworkteacher']::text[]
+  )
 );
 
 create unique index if not exists uq_teachers_group_name_active

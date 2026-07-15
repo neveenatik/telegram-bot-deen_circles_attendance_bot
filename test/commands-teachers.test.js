@@ -44,7 +44,7 @@ test('addteacher: admin adds a valid teacher and persists', async () => {
   await addteacher(ctx);
 
   assert.equal(saved.length, 1);
-  assert.deepEqual(saved[0], { userId: '777', name: 'منى', type: 'courseteacher' });
+  assert.deepEqual(saved[0], { userId: '777', name: 'منى', types: ['courseteacher'] });
   assert.equal(calls.replyWithMarkdown.length, 1);
 });
 
@@ -64,7 +64,7 @@ test('removeteacher: admin removing an existing teacher persists', async () => {
   let saved = null;
   const { removeteacher } = createHandlers({
     storage: teacherStorage({
-      getTeachers: async () => [{ userId: '1', name: 'منى', type: 'courseteacher' }],
+      getTeachers: async () => [{ userId: '1', name: 'منى', types: ['courseteacher'] }],
       saveTeachers: async (_g, teachers) => { saved = teachers; },
     }),
   });

@@ -129,7 +129,7 @@ interface Slot {
   timeOfDay: string;
   teacherId: number | null;
   teacherName: string | null;
-  teacherType: string | null;
+  teacherTypes: string[] | null;
 }
 
 interface UserSlot {
@@ -146,7 +146,7 @@ interface UserSlot {
 interface Teacher {
   id: number;
   name: string;
-  type: string;
+  types: string[];
 }
 
 interface UserPrefs {
@@ -364,7 +364,7 @@ function teacherPickerView(cls: ManageableClass, slot: Slot, teachers: Teacher[]
     };
   }
   const rows = teachers.map((t) => [Markup.button.callback(
-    clampButtonLabel(`${(TEXT.teacherTypeLabel as Record<string, string>)[t.type] || ''} ${t.name}`),
+    clampButtonLabel(`${TEXT.teacherTypesLabel(t.types)} ${t.name}`),
     `o:ttasgd:${g}:${slot.id}:${t.id}`,
   )]);
   rows.push([Markup.button.callback(TT.noTeacherButton, `o:ttasgd:${g}:${slot.id}:0`)]);

@@ -137,7 +137,7 @@ test('onText: groupAddTeacher parses "userId | name | type", saves and refreshes
 
   await onText(ctx, async () => {});
 
-  assert.deepEqual(saved, [{ userId: '555123', name: 'أمل محمد', type: 'courseteacher' }]);
+  assert.deepEqual(saved, [{ userId: '555123', name: 'أمل محمد', types: ['courseteacher'] }]);
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the teachers panel');
 });
 
@@ -147,7 +147,7 @@ test('onText: groupRenameTeacher renames by userId and refreshes the teacher men
   const storage = makeStorage({
     getReplyPrompt: async () => pending,
     delReplyPrompt: async () => {},
-    getTeachers: async () => [{ userId: '111', name: 'أمل', type: 'courseteacher' }],
+    getTeachers: async () => [{ userId: '111', name: 'أمل', types: ['courseteacher'] }],
     saveTeachers: async (_g, list) => { saved = list; },
   });
   const telegram = makeTelegram();

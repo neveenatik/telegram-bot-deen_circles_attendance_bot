@@ -91,7 +91,7 @@ interface Teacher {
   id: number;
   userId: string | null;
   name: string;
-  type: string;
+  types: string[];
 }
 
 interface ManageableClass {
@@ -510,7 +510,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   async function isStaff(homeworkGroupId: string, mainGroupId: string, userId: number): Promise<boolean> {
     if (await isAdminOf(telegram, homeworkGroupId, userId)) return true;
     const teachers = await getTeachers(mainGroupId);
-    return teachers.some((t) => t.type === 'homeworkteacher' && String(t.userId) === String(userId));
+    return teachers.some((t) => Array.isArray(t.types) && t.types.includes('homeworkteacher') && String(t.userId) === String(userId));
   }
 
   // Send a homework item's content (text body first, then each media file) to a

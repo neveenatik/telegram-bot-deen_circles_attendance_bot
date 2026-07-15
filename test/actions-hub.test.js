@@ -128,8 +128,8 @@ test('mg: actions are gated to admins of the originating group', async () => {
 // ── Teachers editor ───────────────────────────────────────────────────
 
 const SAMPLE_TEACHERS = [
-  { userId: '111', name: 'أمل', type: 'courseteacher' },
-  { userId: '222', name: 'هدى', type: 'recitationteacher' },
+  { userId: '111', name: 'أمل', types: ['courseteacher'] },
+  { userId: '222', name: 'هدى', types: ['recitationteacher'] },
 ];
 
 test('mg:teach lists teachers with add, back-to-hub and close rows', async () => {
@@ -160,7 +160,7 @@ test('mg:tch opens a teacher menu (rename / change type / remove)', async () => 
   assert.deepEqual(data, ['mg:tren:123:111', 'mg:ttype:123:111', 'mg:trm:123:111', 'mg:teach:123', 'msg:dismiss']);
 });
 
-test('mg:ttset changes a teacher type and persists it', async () => {
+test('mg:ttset toggles a teacher role and persists it', async () => {
   const saved = [];
   const telegram = makeTelegram();
   const storage = makeStorage({
@@ -172,8 +172,9 @@ test('mg:ttset changes a teacher type and persists it', async () => {
 
   await h.setTeacherType(ctx);
 
-  assert.equal(saved[0].find((t) => t.userId === '111').type, 'trainingteacher');
-  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:tren:123:111', 'mg:ttype:123:111', 'mg:trm:123:111', 'mg:teach:123', 'msg:dismiss']);
+  assert.deepEqual(saved[0].find((t) => t.userId === '111').types, ['courseteacher', 'trainingteacher']);
+  // Stays on the multi-select roles view so more roles can be toggled.
+  assert.ok(cbData(calls, 'editMessageText').includes('mg:ttset:123:111:trainingteacher'));
 });
 
 test('mg:trmx removes a teacher and returns to the list', async () => {

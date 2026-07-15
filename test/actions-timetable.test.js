@@ -35,7 +35,7 @@ function editData(calls) {
 }
 
 const SLOTS = [
-  { id: 1, sessionType: 'main', dayOfWeek: 0, timeOfDay: '17:30', teacherId: 7, teacherName: 'أمل', teacherType: 'courseteacher' },
+  { id: 1, sessionType: 'main', dayOfWeek: 0, timeOfDay: '17:30', teacherId: 7, teacherName: 'أمل', teacherTypes: ['courseteacher'] },
   { id: 2, sessionType: 'training', dayOfWeek: 2, timeOfDay: '10:00', teacherId: null, teacherName: null, teacherType: null },
 ];
 
