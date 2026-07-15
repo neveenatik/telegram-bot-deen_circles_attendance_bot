@@ -76,27 +76,45 @@ test('addPickType: lists the schedulable session types', async () => {
   assert.ok(data.includes('o:ttaddt:5:homeworkReview'));
 });
 
-test('addPickDay: shows all seven weekdays', async () => {
+test('addPickTeacher: lists teachers plus a no-teacher option', async () => {
+  const store = ttStorage({
+    getTeachers: async () => [{ id: 7, name: 'أمل', types: ['courseteacher'] }],
+  });
   const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddt:5:main', '5', 'main'] });
+  await handlers(store).addPickTeacher(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:ttaddg:5:main:7')); // the teacher
+  assert.ok(data.includes('o:ttaddg:5:main:0')); // no-teacher option
+});
+
+test('addPickTeacher: still offers the no-teacher option when there are no teachers', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddt:5:main', '5', 'main'] });
+  await handlers(ttStorage()).addPickTeacher(ctx);
+  assert.ok(editData(calls).includes('o:ttaddg:5:main:0'));
+});
+
+test('addPickDay: shows all seven weekdays', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddg:5:main:0', '5', 'main', '0'] });
   await handlers(ttStorage()).addPickDay(ctx);
-  const data = editData(calls).filter((c) => /^o:ttaddd:5:main:\d$/.test(c));
+  const data = editData(calls).filter((c) => /^o:ttaddd:5:main:0:\d$/.test(c));
   assert.equal(data.length, 7);
 });
 
 test('addPickDay: offers a bulk-add button', async () => {
-  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddt:5:main', '5', 'main'] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddg:5:main:0', '5', 'main', '0'] });
   await handlers(ttStorage()).addPickDay(ctx);
-  assert.ok(editData(calls).includes('o:ttbulk:5:main'));
+  assert.ok(editData(calls).includes('o:ttbulk:5:main:0'));
 });
 
 test('addBulkPrompt: stores a timetableBulk reply prompt', async () => {
   const prompts = [];
   const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
-  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:main', '5', 'main'] });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:main:7', '5', 'main', '7'] });
   await handlers(store).addBulkPrompt(ctx);
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].action, 'timetableBulk');
   assert.equal(prompts[0].sessionType, 'main');
+  assert.equal(prompts[0].teacherId, 7);
 });
 
 test('onMessage: a bulk reply creates one slot per valid line and refreshes', async () => {
@@ -147,12 +165,34 @@ test('onMessage: bulk reports lines it could not parse', async () => {
 test('addPromptTime: stores a timetableTime reply prompt', async () => {
   const prompts = [];
   const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
-  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttaddd:5:main:0', '5', 'main', '0'] });
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:ttaddd:5:main:7:0', '5', 'main', '7', '0'] });
   await handlers(store).addPromptTime(ctx);
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].action, 'timetableTime');
   assert.equal(prompts[0].sessionType, 'main');
   assert.equal(prompts[0].dayOfWeek, 0);
+  assert.equal(prompts[0].teacherId, 7);
+});
+
+test('onMessage: a timed reply creates the slot with the chosen teacher', async () => {
+  const added = [];
+  const store = ttStorage({
+    getReplyPrompt: async () => ({ action: 'timetableTime', groupId: 'offline:o:1', gref: '5', sessionType: 'main', dayOfWeek: 0, teacherId: 7, chatId: 777, msgId: 600 }),
+    delReplyPrompt: async () => {},
+    addScheduleSlot: async (_g, slot) => { added.push(slot); return added.length; },
+  });
+  const telegram = makeTelegram();
+  const calls = { reply: [] };
+  const ctx = {
+    chat: { id: 777, type: 'private' },
+    from: { id: OWNER },
+    message: { message_id: 601, text: '17:30', reply_to_message: { message_id: 600 } },
+    telegram,
+    reply(...a) { calls.reply.push(a); return Promise.resolve({ message_id: 602 }); },
+  };
+  await handlers(store).onMessage(ctx, async () => {});
+  assert.equal(added[0].teacherId, 7);
+  assert.equal(added[0].timeOfDay, '17:30');
 });
 
 test('addPromptTime: homeworkReview adds an all-day slot immediately (no time prompt)', async () => {
@@ -162,17 +202,17 @@ test('addPromptTime: homeworkReview adds an all-day slot immediately (no time pr
     addScheduleSlot: async (_g, slot) => { added.push(slot); return added.length; },
     setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); },
   });
-  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddd:5:homeworkReview:3', '5', 'homeworkReview', '3'] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttaddd:5:homeworkReview:7:3', '5', 'homeworkReview', '7', '3'] });
   await handlers(store).addPromptTime(ctx);
   assert.equal(prompts.length, 0); // no force-reply for an all-day type
-  assert.deepEqual(added.map((s) => [s.dayOfWeek, s.timeOfDay]), [[3, 'allday']]);
+  assert.deepEqual(added.map((s) => [s.dayOfWeek, s.timeOfDay, s.teacherId]), [[3, 'allday', 7]]);
   assert.equal(calls.editMessageText.length, 1); // panel refreshed in place
 });
 
 test('addBulkPrompt: homeworkReview asks for days only (all-day)', async () => {
   const prompts = [];
   const store = ttStorage({ setReplyPrompt: async (_c, _m, rec) => { prompts.push(rec); } });
-  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:homeworkReview', '5', 'homeworkReview'] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttbulk:5:homeworkReview:0', '5', 'homeworkReview', '0'] });
   await handlers(store).addBulkPrompt(ctx);
   assert.equal(prompts[0].sessionType, 'homeworkReview');
   assert.match(calls.reply[0][0], /طوال اليوم/);

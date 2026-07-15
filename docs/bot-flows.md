@@ -529,7 +529,11 @@ attendance sessions.
   specific time; **`homeworkReview` is all-day** — you pick only a day and it is
   stored with the `'allday'` sentinel, shown as «طوال اليوم», sorted ahead of
   timed slots, and never timezone-shifted.
-- **Bulk add:** pick the type, then paste one entry per line — `day time` for
+- **Adding a slot:** the flow is **type → teacher → day → time** (all-day types
+  skip the time step). Choosing the responsible teacher (or «بدون معلمة») up
+  front means the slot is created complete — no need to edit it afterwards just
+  to set a teacher.
+- **Bulk add:** pick the type + teacher, then paste one entry per line — `day time` for
   timed types (e.g. `الأحد 10:00`), or just `day` for all-day types. Arabic and
   English weekday names are accepted; unparseable lines are reported and skipped.
   This is much faster than adding slots one by one.
@@ -561,7 +565,7 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `mg:mat*` | Teaching materials from the `/manage` hub. A lesson owns many files: `matadd` opens a multi-file upload session, `matfadd` adds files to an existing lesson, `matdone` ends the session; plus send-to-group / remove | `actions/materials.ts` |
 | `mg:hw*` | Homework tracking from the `/manage` hub (list / item breakdown / tag non-submitters / remove) | `actions/homework.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
-| `o:tt*` | Weekly roster (timetable) from the offline class hub: add slot, bulk add (`o:ttbulk`), edit a slot's day (`o:tted`/`o:ttsd`) or time (`o:ttet`), assign teacher to a slot, week view, class timezone (`o:tttz*`, region pickers `o:tzr`/`o:tzp`) | `actions/timetable.ts` |
+| `o:tt*` | Weekly roster (timetable) from the offline class hub: add slot (type → teacher → day → time; `o:ttaddt`/`o:ttaddg`/`o:ttaddd`), bulk add (`o:ttbulk`), edit a slot's day (`o:tted`/`o:ttsd`) or time (`o:ttet`), assign teacher to a slot, week view, class timezone (`o:tttz*`, region pickers `o:tzr`/`o:tzp`) | `actions/timetable.ts` |
 | `o:mw` / `o:vtz*` / `o:vws*` | Per-viewer prefs for `/myweek`: refresh (`o:mw`), **view timezone** (`o:vtz*`, region pickers `o:vzr`/`o:vzp`) and **week start** (`o:vws*`), stored in `user_prefs` | `actions/timetable.ts` |
 | `o:mat*` | Teaching materials from the offline class hub (add / send to me / remove) | `actions/materials.ts` |
 | `o:hw*` | Homework tracking from the offline class hub (add / per-student toggle / remove) | `actions/homework.ts` |

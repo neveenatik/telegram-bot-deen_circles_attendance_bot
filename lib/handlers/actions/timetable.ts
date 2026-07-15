@@ -402,17 +402,30 @@ function pickTypeView(cls: ManageableClass) {
   return { text: TT.pickType, keyboard: Markup.inlineKeyboard(rows) };
 }
 
-function pickDayView(cls: ManageableClass, type: string) {
+// Teacher picker during the add flow: choose a teacher (or none) up front so the
+// slot is created complete, before picking the day + time.
+function addTeacherPickerView(cls: ManageableClass, type: string, teachers: Teacher[]) {
+  const g = cls.rowId;
+  const rows = teachers.map((t) => [Markup.button.callback(
+    clampButtonLabel(`${TEXT.teacherTypesLabel(t.types)} ${t.name}`),
+    `o:ttaddg:${g}:${type}:${t.id}`,
+  )]);
+  rows.push([Markup.button.callback(TT.noTeacherButton, `o:ttaddg:${g}:${type}:0`)]);
+  rows.push([Markup.button.callback(TEXT.backButton, `o:ttadd:${g}`), ...dismissRow()]);
+  return { text: TT.pickTeacher, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function pickDayView(cls: ManageableClass, type: string, teacherId: number) {
   const g = cls.rowId;
   const rows = [];
   // Two weekdays per row for a compact keyboard.
   for (let d = 0; d < 7; d += 2) {
-    const row = [Markup.button.callback(dayLabel(d), `o:ttaddd:${g}:${type}:${d}`)];
-    if (d + 1 < 7) row.push(Markup.button.callback(dayLabel(d + 1), `o:ttaddd:${g}:${type}:${d + 1}`));
+    const row = [Markup.button.callback(dayLabel(d), `o:ttaddd:${g}:${type}:${teacherId}:${d}`)];
+    if (d + 1 < 7) row.push(Markup.button.callback(dayLabel(d + 1), `o:ttaddd:${g}:${type}:${teacherId}:${d + 1}`));
     rows.push(row);
   }
-  rows.push([Markup.button.callback(TT.bulkButton, `o:ttbulk:${g}:${type}`)]);
-  rows.push([Markup.button.callback(TEXT.backButton, `o:ttadd:${g}`), ...dismissRow()]);
+  rows.push([Markup.button.callback(TT.bulkButton, `o:ttbulk:${g}:${type}:${teacherId}`)]);
+  rows.push([Markup.button.callback(TEXT.backButton, `o:ttaddt:${g}:${type}`), ...dismissRow()]);
   return { text: TT.pickDay, keyboard: Markup.inlineKeyboard(rows) };
 }
 
@@ -813,27 +826,45 @@ export function createHandlers({ storage }: { storage: Storage }) {
     await ctx.answerCbQuery();
   }
 
-  async function addPickDay(ctx: Context): Promise<void> {
+  // After picking the type, choose the responsible teacher (or none) up front.
+  async function addPickTeacher(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const type = readMatch(ctx)[2] ?? '';
     if (!SCHEDULE_TYPES.includes(type)) { await ctx.answerCbQuery(TT.missing); return; }
-    const view = pickDayView(cls, type);
+    const teachers = await getTeachers(cls.groupId);
+    const view = addTeacherPickerView(cls, type, teachers);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
   }
 
-  // After picking type + day, force-reply for the time (captured by onMessage).
-  // All-day types (e.g. homework review) skip the time step and add immediately.
+  async function addPickDay(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const m = readMatch(ctx);
+    const type = m[2] ?? '';
+    const teacherId = Number(m[3] ?? NaN);
+    if (!SCHEDULE_TYPES.includes(type) || !Number.isInteger(teacherId)) { await ctx.answerCbQuery(TT.missing); return; }
+    const view = pickDayView(cls, type, teacherId);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  // After picking type + teacher + day, force-reply for the time (captured by
+  // onMessage). All-day types (e.g. homework review) skip the time step and add
+  // immediately.
   async function addPromptTime(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
     const m = readMatch(ctx);
     const type = m[2] ?? '';
-    const day = Number(m[3] ?? NaN);
-    if (!SCHEDULE_TYPES.includes(type) || !Number.isInteger(day)) { await ctx.answerCbQuery(TT.missing); return; }
+    const teacherId = Number(m[3] ?? NaN);
+    const day = Number(m[4] ?? NaN);
+    if (!SCHEDULE_TYPES.includes(type) || !Number.isInteger(teacherId) || !Number.isInteger(day)) {
+      await ctx.answerCbQuery(TT.missing); return;
+    }
     if (isAllDayType(type)) {
-      await addScheduleSlot(cls.groupId, { sessionType: type, dayOfWeek: day, timeOfDay: ALL_DAY, teacherId: null });
+      await addScheduleSlot(cls.groupId, { sessionType: type, dayOfWeek: day, timeOfDay: ALL_DAY, teacherId: teacherId || null });
       const slots = await listScheduleSlots(cls.groupId);
       const timezone = await getClassTimezone(cls.groupId);
       const view = panelView(cls, slots, timezone, canManage(cls.role));
@@ -844,23 +875,25 @@ export function createHandlers({ storage }: { storage: Storage }) {
     await beginForceReplyAwaiting(ctx, {
       setReplyPrompt,
       groupId: cls.groupId,
-      record: { action: 'timetableTime', gref: String(cls.rowId), sessionType: type, dayOfWeek: day },
+      record: { action: 'timetableTime', gref: String(cls.rowId), sessionType: type, dayOfWeek: day, teacherId },
       sendPrompt: () => ctx.reply(TT.timePrompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
     });
   }
 
-  // Bulk add: one type chosen, then paste many lines at once — "day time" for
-  // timed types, or just "day" for all-day types.
+  // Bulk add: type + teacher chosen, then paste many lines at once — "day time"
+  // for timed types, or just "day" for all-day types.
   async function addBulkPrompt(ctx: Context): Promise<void> {
     const cls = await resolve(ctx);
     if (!cls || !canManage(cls.role)) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
-    const type = readMatch(ctx)[2] ?? '';
-    if (!SCHEDULE_TYPES.includes(type)) { await ctx.answerCbQuery(TT.missing); return; }
+    const m = readMatch(ctx);
+    const type = m[2] ?? '';
+    const teacherId = Number(m[3] ?? NaN);
+    if (!SCHEDULE_TYPES.includes(type) || !Number.isInteger(teacherId)) { await ctx.answerCbQuery(TT.missing); return; }
     const prompt = isAllDayType(type) ? TT.bulkPromptAllDay(typeLabel(type)) : TT.bulkPrompt(typeLabel(type));
     await beginForceReplyAwaiting(ctx, {
       setReplyPrompt,
       groupId: cls.groupId,
-      record: { action: 'timetableBulk', gref: String(cls.rowId), sessionType: type },
+      record: { action: 'timetableBulk', gref: String(cls.rowId), sessionType: type, teacherId },
       sendPrompt: () => ctx.reply(prompt, { parse_mode: 'Markdown', reply_markup: { force_reply: true } }),
     });
   }
@@ -1044,6 +1077,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
 
     if (pending.action === 'timetableBulk') {
       const allDay = isAllDayType(String(pending.sessionType));
+      const bulkTeacherId = Number(pending.teacherId ?? 0) || null;
       const lines = (msg.text ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
       let added = 0;
       const failed: string[] = [];
@@ -1055,7 +1089,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
             sessionType: String(pending.sessionType),
             dayOfWeek: day,
             timeOfDay: ALL_DAY,
-            teacherId: null,
+            teacherId: bulkTeacherId,
           });
           added += 1;
           continue;
@@ -1066,7 +1100,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
           sessionType: String(pending.sessionType),
           dayOfWeek: parsed.dayOfWeek,
           timeOfDay: parsed.time,
-          teacherId: null,
+          teacherId: bulkTeacherId,
         });
         added += 1;
       }
@@ -1090,7 +1124,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
       sessionType: String(pending.sessionType),
       dayOfWeek: Number(pending.dayOfWeek),
       timeOfDay: time,
-      teacherId: null,
+      teacherId: Number(pending.teacherId ?? 0) || null,
     });
     await replyEphemeral(ctx, TT.slotAdded);
     await refreshPanel();
@@ -1111,6 +1145,7 @@ export function createHandlers({ storage }: { storage: Storage }) {
     weekStartPicker,
     weekStartApply,
     addPickType,
+    addPickTeacher,
     addPickDay,
     addPromptTime,
     addBulkPrompt,
@@ -1145,9 +1180,10 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:vws:([cm]):(\d+)$/, h.weekStartPicker);
   bot.action(/^o:vwsx:([cm]):(\d+):([0-6])$/, h.weekStartApply);
   bot.action(/^o:ttadd:(\d+)$/, h.addPickType);
-  bot.action(/^o:ttaddt:(\d+):([a-zA-Z]+)$/, h.addPickDay);
-  bot.action(/^o:ttaddd:(\d+):([a-zA-Z]+):(\d+)$/, h.addPromptTime);
-  bot.action(/^o:ttbulk:(\d+):([a-zA-Z]+)$/, h.addBulkPrompt);
+  bot.action(/^o:ttaddt:(\d+):([a-zA-Z]+)$/, h.addPickTeacher);
+  bot.action(/^o:ttaddg:(\d+):([a-zA-Z]+):(\d+)$/, h.addPickDay);
+  bot.action(/^o:ttaddd:(\d+):([a-zA-Z]+):(\d+):(\d+)$/, h.addPromptTime);
+  bot.action(/^o:ttbulk:(\d+):([a-zA-Z]+):(\d+)$/, h.addBulkPrompt);
   bot.action(/^o:ttslot:(\d+):(\d+)$/, h.slotMenu);
   bot.action(/^o:ttasg:(\d+):(\d+)$/, h.assignTeacherMenu);
   bot.action(/^o:ttasgd:(\d+):(\d+):(\d+)$/, h.assignTeacher);
