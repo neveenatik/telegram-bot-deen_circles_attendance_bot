@@ -168,6 +168,8 @@ create index if not exists idx_homework_group_active
 
 -- One row per (homework, member). A row exists once the member has submitted;
 -- reviewed flips true when a homework teacher replies to the submission.
+-- resubmitted flips true when the member submits again after a review (awaiting
+-- re-review); a fresh review clears it.
 create table if not exists homework_submissions (
   id bigserial primary key,
   homework_id bigint not null references homework(id) on delete cascade,
@@ -177,6 +179,8 @@ create table if not exists homework_submissions (
   reviewed boolean not null default false,
   reviewed_by text,
   reviewed_at timestamptz,
+  resubmitted boolean not null default false,
+  resubmitted_at timestamptz,
   updated_at timestamptz not null default now(),
   unique (homework_id, member_id)
 );

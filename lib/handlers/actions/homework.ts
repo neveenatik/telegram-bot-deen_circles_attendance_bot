@@ -63,7 +63,12 @@ interface Submission {
   reviewed: boolean;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  resubmitted: boolean;
+  resubmittedAt: string | null;
 }
+
+// The four per-student states an offline submission can hold.
+type SubmissionState = 'none' | 'submitted' | 'reviewed' | 'resubmitted';
 
 interface Teacher {
   id: number;
@@ -110,6 +115,7 @@ interface Storage {
   toggleSubmission(homeworkId: number, memberId: number): Promise<boolean>;
   markReviewedByMessage(submissionMessageId: number, reviewerUserId: number | string): Promise<boolean>;
   toggleReviewed(homeworkId: number, memberId: number, reviewerUserId?: number | string | null): Promise<boolean>;
+  setSubmissionState(homeworkId: number, memberId: number, state: SubmissionState, actorUserId?: number | string | null): Promise<void>;
   // Rosters.
   getMaster(groupId: string): Promise<{ members: RosterMember[] }>;
   getMembersWithIds(groupId: string): Promise<MemberWithId[]>;
@@ -144,11 +150,30 @@ function extractTitle(text: string): string {
   return stripped || HW.defaultTitle;
 }
 
-// ⬜️ not submitted · 📝 submitted, awaiting review · ✅ reviewed.
-function marker(submitted: boolean, reviewed: boolean): string {
+// ⬜️ not submitted · 📝 submitted, awaiting review · ✅ reviewed · 🔁 resubmitted.
+function marker(submitted: boolean, reviewed: boolean, resubmitted: boolean): string {
+  if (resubmitted) return '🔁';
   if (reviewed) return '✅';
   if (submitted) return '📝';
   return '⬜️';
+}
+
+// Reduce a submission row to its state; absence of a row is 'none'.
+function submissionState(sub: Submission | undefined | null): SubmissionState {
+  if (!sub) return 'none';
+  if (sub.resubmitted) return 'resubmitted';
+  if (sub.reviewed) return 'reviewed';
+  return 'submitted';
+}
+
+// The offline manual cycle: ⬜️ → 📝 → ✅ → 🔁 → ⬜️.
+function nextState(state: SubmissionState): SubmissionState {
+  switch (state) {
+    case 'none': return 'submitted';
+    case 'submitted': return 'reviewed';
+    case 'reviewed': return 'resubmitted';
+    default: return 'none';
+  }
 }
 
 function readMatch(ctx: Context): RegExpExecArray {
@@ -172,6 +197,10 @@ function homeworkListView(surface: Surface, token: string, items: HomeworkItem[]
     const cb = surface === 'group' ? `mg:hwit:${token}:${item.id}` : `o:hwit:${token}:${item.id}`;
     rows.push([Markup.button.callback(clampButtonLabel(item.title), cb)]);
   }
+  if (list.length) {
+    const repCb = surface === 'group' ? `mg:hwrep:${token}` : `o:hwrep:${token}`;
+    rows.push([Markup.button.callback(HW.reportButton, repCb)]);
+  }
   const backCb = surface === 'group' ? `mg:home:${token}` : `o:cls:${token}`;
   rows.push([Markup.button.callback(TEXT.backButton, backCb)]);
   rows.push(dismissRow());
@@ -179,25 +208,32 @@ function homeworkListView(surface: Surface, token: string, items: HomeworkItem[]
   return { text: `${HW.title}\n\n${hint}`, keyboard: Markup.inlineKeyboard(rows) };
 }
 
+// Count the submitted / reviewed / resubmitted totals for one homework item.
+function tallySubmissions(submissions: Submission[]): { submitted: number; reviewed: number; resubmitted: number } {
+  return {
+    submitted: submissions.length,
+    reviewed: submissions.filter((s) => s.reviewed).length,
+    resubmitted: submissions.filter((s) => s.resubmitted).length,
+  };
+}
+
 // Group item detail: counts + a read-only per-student breakdown (matched by name
 // against the current roster). Non-submitters can be nudged in the group.
 function homeworkGroupItemView(groupId: string, item: HomeworkItem, roster: RosterMember[], submissions: Submission[]) {
-  const submittedByName = new Map<string, boolean>();
+  const stateByName = new Map<string, Submission>();
   for (const s of submissions) {
-    if (s.memberName) submittedByName.set(s.memberName, s.reviewed);
+    if (s.memberName) stateByName.set(s.memberName, s);
   }
   const total = roster.length;
-  const submitted = submissions.length;
-  const reviewed = submissions.filter((s) => s.reviewed).length;
+  const { submitted, reviewed, resubmitted } = tallySubmissions(submissions);
 
   const lines: string[] = [];
   for (const m of roster) {
-    const has = submittedByName.has(m.name);
-    const isReviewed = has ? submittedByName.get(m.name) === true : false;
-    lines.push(`${marker(has, isReviewed)} ${escapeTelegramMarkdown(m.name)}`);
+    const s = stateByName.get(m.name);
+    lines.push(`${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${escapeTelegramMarkdown(m.name)}`);
   }
   const body = total
-    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed)}\n\n${lines.join('\n')}\n\n${HW.legend}`
+    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed, resubmitted)}\n\n${lines.join('\n')}\n\n${HW.legend}`
     : `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n\n${HW.noStudents}`;
 
   const rows = [];
@@ -212,20 +248,18 @@ function homeworkGroupItemView(groupId: string, item: HomeworkItem, roster: Rost
 
 // Offline item detail: one toggle button per student cycling ⬜️ → 📝 → ✅ → ⬜️.
 function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: MemberWithId[], submissions: Submission[]) {
-  const stateByMember = new Map<number, boolean>();
+  const stateByMember = new Map<number, Submission>();
   for (const s of submissions) {
-    if (s.memberId !== null) stateByMember.set(s.memberId, s.reviewed);
+    if (s.memberId !== null) stateByMember.set(s.memberId, s);
   }
   const total = members.length;
-  const submitted = submissions.length;
-  const reviewed = submissions.filter((s) => s.reviewed).length;
+  const { submitted, reviewed, resubmitted } = tallySubmissions(submissions);
 
   const rows = [];
   for (const m of members) {
-    const has = stateByMember.has(m.id);
-    const isReviewed = has ? stateByMember.get(m.id) === true : false;
+    const s = stateByMember.get(m.id);
     rows.push([Markup.button.callback(
-      clampButtonLabel(`${marker(has, isReviewed)} ${m.name}`),
+      clampButtonLabel(`${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${m.name}`),
       `o:hwtog:${gref}:${item.id}:${m.id}`,
     )]);
   }
@@ -234,7 +268,7 @@ function homeworkOfflineItemView(gref: string, item: HomeworkItem, members: Memb
   rows.push(dismissRow());
 
   const head = total
-    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed)}\n\n${HW.manageHint}`
+    ? `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n${HW.counts(submitted, total, reviewed, resubmitted)}\n\n${HW.manageHint}`
     : `${HW.itemTitle(escapeTelegramMarkdown(item.title))}\n\n${HW.noStudents}`;
   return { text: head, keyboard: Markup.inlineKeyboard(rows) };
 }
@@ -248,6 +282,40 @@ function homeworkRemoveConfirmView(surface: Surface, token: string, item: Homewo
     dismissRow(),
   ];
   return { text: HW.removeConfirm(escapeTelegramMarkdown(item.title)), keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// One homework item's slice of the printable report: its counts plus a marker
+// line per student.
+interface ReportEntry {
+  item: HomeworkItem;
+  total: number;
+  counts: { submitted: number; reviewed: number; resubmitted: number };
+  lines: string[];
+}
+
+// Build the printable homework report. Returns Telegram-sized chunks (≤ ~3500
+// chars) so a class with many items/students never overflows a single message.
+function buildHomeworkReport(className: string, entries: ReportEntry[]): string[] {
+  const blocks: string[] = [HW.reportHeader(escapeTelegramMarkdown(className))];
+  for (const e of entries) {
+    const header = HW.reportItemHeader(
+      escapeTelegramMarkdown(e.item.title), e.counts.submitted, e.total, e.counts.reviewed, e.counts.resubmitted,
+    );
+    blocks.push(e.lines.length ? `${header}\n${e.lines.join('\n')}` : `${header}\n${HW.noStudents}`);
+  }
+  blocks.push(HW.legend);
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const block of blocks) {
+    if (current && current.length + block.length + 2 > 3500) {
+      chunks.push(current);
+      current = '';
+    }
+    current = current ? `${current}\n\n${block}` : block;
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }
 
 export function createHandlers({ storage, telegram }: { storage: Storage; telegram: Telegram }) {
@@ -265,9 +333,8 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     removeHomework,
     getSubmissions,
     recordSubmission,
-    toggleSubmission,
     markReviewedByMessage,
-    toggleReviewed,
+    setSubmissionState,
     getMaster,
     getMembersWithIds,
     findMemberByUserId,
@@ -481,6 +548,44 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(item ? HW.removedToast(item.title) : undefined);
   }
 
+  // Deliver a (possibly multi-part) report as fresh messages so it can be
+  // forwarded or printed, leaving the panel untouched.
+  async function sendReport(ctx: Context, chunks: string[]): Promise<void> {
+    for (const chunk of chunks) {
+      await ctx.reply(chunk, { parse_mode: 'Markdown' });
+    }
+  }
+
+  // Best-effort group title for the report header; falls back to a neutral label.
+  async function groupTitle(groupId: string): Promise<string> {
+    try {
+      const chat = await telegram.getChat(groupId) as { title?: string };
+      return chat.title || HW.reportFallbackName;
+    } catch {
+      return HW.reportFallbackName;
+    }
+  }
+
+  async function homeworkReportGroup(ctx: Context): Promise<void> {
+    const groupId = await authorizeGroup(ctx);
+    if (!groupId) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const items = await getHomework(groupId);
+    if (!items.length) { await ctx.answerCbQuery(HW.reportEmpty); return; }
+    const [{ members }, title] = await Promise.all([getMaster(groupId), groupTitle(groupId)]);
+    const entries: ReportEntry[] = [];
+    for (const item of items) {
+      const subs = await getSubmissions(item.id);
+      const byName = new Map(subs.filter((s) => s.memberName).map((s) => [s.memberName as string, s]));
+      const lines = members.map((m) => {
+        const s = byName.get(m.name);
+        return `${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${escapeTelegramMarkdown(m.name)}`;
+      });
+      entries.push({ item, total: members.length, counts: tallySubmissions(subs), lines });
+    }
+    await sendReport(ctx, buildHomeworkReport(title, entries));
+    await ctx.answerCbQuery(HW.reportGeneratedToast);
+  }
+
   // ── Offline class surface (o:hw*) ───────────────────────────────────────────
   // Token = numeric gref; resolveManageableClass gates on owner/operator.
 
@@ -528,7 +633,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery();
   }
 
-  // Cycle one student's state: ⬜️ → 📝 (submit) → ✅ (review) → ⬜️ (clear).
+  // Cycle one student's state: ⬜️ → 📝 (submit) → ✅ (review) → 🔁 (resubmit) → ⬜️.
   async function homeworkToggleOffline(ctx: Context): Promise<void> {
     const cls = await resolveOffline(ctx);
     if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
@@ -540,14 +645,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     const before = await getSubmissions(item.id);
     const current = before.find((s) => s.memberId === memberId) ?? null;
     const userId = ctx.from?.id ?? null;
-    if (!current) {
-      await toggleSubmission(item.id, memberId); // ⬜️ → 📝
-    } else if (!current.reviewed) {
-      await toggleReviewed(item.id, memberId, userId); // 📝 → ✅
-    } else {
-      await toggleReviewed(item.id, memberId, userId); // ✅ → 📝 (clear reviewed)
-      await toggleSubmission(item.id, memberId); // 📝 → ⬜️ (clear submission)
-    }
+    await setSubmissionState(item.id, memberId, nextState(submissionState(current)), userId);
 
     const [members, submissions] = await Promise.all([
       getMembersWithIds(cls.groupId),
@@ -581,17 +679,39 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     await ctx.answerCbQuery(item ? HW.removedToast(item.title) : undefined);
   }
 
+  async function homeworkReportOffline(ctx: Context): Promise<void> {
+    const cls = await resolveOffline(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const items = await getHomework(cls.groupId);
+    if (!items.length) { await ctx.answerCbQuery(HW.reportEmpty); return; }
+    const members = await getMembersWithIds(cls.groupId);
+    const entries: ReportEntry[] = [];
+    for (const item of items) {
+      const subs = await getSubmissions(item.id);
+      const byMember = new Map(subs.filter((s) => s.memberId !== null).map((s) => [s.memberId as number, s]));
+      const lines = members.map((m) => {
+        const s = byMember.get(m.id);
+        return `${marker(Boolean(s), Boolean(s?.reviewed), Boolean(s?.resubmitted))} ${escapeTelegramMarkdown(m.name)}`;
+      });
+      entries.push({ item, total: members.length, counts: tallySubmissions(subs), lines });
+    }
+    await sendReport(ctx, buildHomeworkReport(cls.name, entries));
+    await ctx.answerCbQuery(HW.reportGeneratedToast);
+  }
+
   return {
     onHomeworkMessage,
     homeworkGroup,
     homeworkItemGroup,
     homeworkTagGroup,
+    homeworkReportGroup,
     homeworkRemoveGroup,
     homeworkRemoveExecGroup,
     homeworkOffline,
     homeworkAddOffline,
     homeworkItemOffline,
     homeworkToggleOffline,
+    homeworkReportOffline,
     homeworkRemoveOffline,
     homeworkRemoveExecOffline,
   };
@@ -605,6 +725,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^mg:hw:(-?\d+)$/, h.homeworkGroup);
   bot.action(/^mg:hwit:(-?\d+):(\d+)$/, h.homeworkItemGroup);
   bot.action(/^mg:hwtag:(-?\d+):(\d+)$/, h.homeworkTagGroup);
+  bot.action(/^mg:hwrep:(-?\d+)$/, h.homeworkReportGroup);
   bot.action(/^mg:hwrm:(-?\d+):(\d+)$/, h.homeworkRemoveGroup);
   bot.action(/^mg:hwrmx:(-?\d+):(\d+)$/, h.homeworkRemoveExecGroup);
 
@@ -613,6 +734,7 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.action(/^o:hwadd:(\d+)$/, h.homeworkAddOffline);
   bot.action(/^o:hwit:(\d+):(\d+)$/, h.homeworkItemOffline);
   bot.action(/^o:hwtog:(\d+):(\d+):(\d+)$/, h.homeworkToggleOffline);
+  bot.action(/^o:hwrep:(\d+)$/, h.homeworkReportOffline);
   bot.action(/^o:hwrm:(\d+):(\d+)$/, h.homeworkRemoveOffline);
   bot.action(/^o:hwrmx:(\d+):(\d+)$/, h.homeworkRemoveExecOffline);
 }

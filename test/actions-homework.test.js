@@ -314,8 +314,7 @@ function offlineStorage(overrides = {}) {
     getSubmissions: async () => [],
     addHomework: async () => 2,
     removeHomework: async () => {},
-    toggleSubmission: async () => true,
-    toggleReviewed: async () => true,
+    setSubmissionState: async () => true,
     ...overrides,
   });
 }
@@ -376,24 +375,25 @@ test('offline panel: item detail lists a toggle button per student', async () =>
 });
 
 test('offline panel: toggling an unsubmitted student records a submission (⬜️ → 📝)', async () => {
-  const subs = [];
-  const storage = offlineStorage({ getSubmissions: async () => [], toggleSubmission: async (...a) => { subs.push(a); return true; } });
+  const calls = [];
+  const storage = offlineStorage({ getSubmissions: async () => [], setSubmissionState: async (...a) => { calls.push(a); return true; } });
   const telegram = makeTelegram();
   const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwtog:5:1:7', '5', '1', '7'] });
   const h = createHandlers({ storage, telegram });
 
   await h.homeworkToggleOffline(ctx);
 
-  assert.deepEqual(subs[0], [1, 7]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 1);
+  assert.equal(calls[0][1], 7);
+  assert.equal(calls[0][2], 'submitted');
 });
 
 test('offline panel: toggling a submitted student marks it reviewed (📝 → ✅)', async () => {
-  const reviews = [];
-  let subToggles = 0;
+  const calls = [];
   const storage = offlineStorage({
-    getSubmissions: async () => [{ id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: false, reviewedBy: null, reviewedAt: null }],
-    toggleReviewed: async (...a) => { reviews.push(a); return true; },
-    toggleSubmission: async () => { subToggles += 1; return true; },
+    getSubmissions: async () => [{ id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: false, reviewedBy: null, reviewedAt: null, resubmitted: false, resubmittedAt: null }],
+    setSubmissionState: async (...a) => { calls.push(a); return true; },
   });
   const telegram = makeTelegram();
   const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwtog:5:1:7', '5', '1', '7'] });
@@ -401,19 +401,17 @@ test('offline panel: toggling a submitted student marks it reviewed (📝 → �
 
   await h.homeworkToggleOffline(ctx);
 
-  assert.equal(reviews.length, 1);
-  assert.equal(reviews[0][0], 1);
-  assert.equal(reviews[0][1], 7);
-  assert.equal(subToggles, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 1);
+  assert.equal(calls[0][1], 7);
+  assert.equal(calls[0][2], 'reviewed');
 });
 
-test('offline panel: toggling a reviewed student clears both flags (✅ → ⬜️)', async () => {
-  let reviewToggles = 0;
-  let subToggles = 0;
+test('offline panel: toggling a reviewed student marks it resubmitted (✅ → 🔁)', async () => {
+  const calls = [];
   const storage = offlineStorage({
-    getSubmissions: async () => [{ id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null }],
-    toggleReviewed: async () => { reviewToggles += 1; return false; },
-    toggleSubmission: async () => { subToggles += 1; return false; },
+    getSubmissions: async () => [{ id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null, resubmitted: false, resubmittedAt: null }],
+    setSubmissionState: async (...a) => { calls.push(a); return true; },
   });
   const telegram = makeTelegram();
   const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwtog:5:1:7', '5', '1', '7'] });
@@ -421,8 +419,104 @@ test('offline panel: toggling a reviewed student clears both flags (✅ → ⬜�
 
   await h.homeworkToggleOffline(ctx);
 
-  assert.equal(reviewToggles, 1);
-  assert.equal(subToggles, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][2], 'resubmitted');
+});
+
+test('offline panel: toggling a resubmitted student clears all flags (🔁 → ⬜️)', async () => {
+  const calls = [];
+  const storage = offlineStorage({
+    getSubmissions: async () => [{ id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null, resubmitted: true, resubmittedAt: null }],
+    setSubmissionState: async (...a) => { calls.push(a); return true; },
+  });
+  const telegram = makeTelegram();
+  const { ctx } = makeCtx({ userId: OWNER, match: ['o:hwtog:5:1:7', '5', '1', '7'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkToggleOffline(ctx);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][2], 'none');
+});
+
+// ── Homework report ──────────────────────────────────────────────────────────
+
+test('offline report: sends a report message per class and answers a toast', async () => {
+  const storage = offlineStorage({
+    getHomework: async () => [{ id: 1, title: 'الدرس الأول', sourceMessageId: null, postedBy: null, createdAt: null }],
+    getMembersWithIds: async () => [{ id: 7, name: 'فاطمة', userId: null, listNumber: 1 }, { id: 8, name: 'عائشة', userId: null, listNumber: 2 }],
+    getSubmissions: async () => [
+      { id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: null, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null, resubmitted: false, resubmittedAt: null },
+      { id: 2, memberId: 8, memberName: 'عائشة', submissionMessageId: null, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null, resubmitted: true, resubmittedAt: null },
+    ],
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwrep:5', '5'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReportOffline(ctx);
+
+  assert.ok(calls.reply.length >= 1);
+  const text = calls.reply.map((r) => r[0]).join('\n\n');
+  assert.ok(text.includes('صف')); // class name in the report header
+  assert.ok(text.includes('فاطمة'));
+  assert.ok(text.includes('عائشة'));
+  assert.equal(calls.answerCbQuery[0][0], HW.reportGeneratedToast);
+});
+
+test('offline report: with no homework answers the empty toast and sends nothing', async () => {
+  const storage = offlineStorage({ getHomework: async () => [] });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:hwrep:5', '5'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReportOffline(ctx);
+
+  assert.equal(calls.reply.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], HW.reportEmpty);
+});
+
+test('offline report: assistant is rejected', async () => {
+  const storage = offlineStorage({ resolveManageableClass: async () => ({ groupId: 'offline:o:1', rowId: 5, role: 'assistant', name: 'صف' }) });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ userId: STUDENT, match: ['o:hwrep:5', '5'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReportOffline(ctx);
+
+  assert.equal(calls.reply.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], TEXT.adminOnly);
+});
+
+test('group report: sends a report keyed by member name and answers a toast', async () => {
+  const storage = panelStorage({
+    getSubmissions: async () => [
+      { id: 1, memberId: 7, memberName: 'فاطمة', submissionMessageId: 901, submittedAt: null, reviewed: true, reviewedBy: null, reviewedAt: null, resubmitted: false, resubmittedAt: null },
+    ],
+  });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ chatType: 'group', admin: true, chatId: -100, match: ['mg:hwrep:-100', '-100'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReportGroup(ctx);
+
+  assert.ok(calls.reply.length >= 1);
+  const text = calls.reply.map((r) => r[0]).join('\n\n');
+  assert.ok(text.includes('فاطمة'));
+  assert.ok(text.includes('عائشة'));
+  assert.equal(calls.answerCbQuery[0][0], HW.reportGeneratedToast);
+});
+
+test('group report: with no homework answers the empty toast', async () => {
+  const storage = panelStorage({ getHomework: async () => [] });
+  const telegram = makeTelegram();
+  const { ctx, calls } = makeCtx({ chatType: 'group', admin: true, chatId: -100, match: ['mg:hwrep:-100', '-100'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.homeworkReportGroup(ctx);
+
+  assert.equal(calls.reply.length, 0);
+  assert.equal(calls.answerCbQuery[0][0], HW.reportEmpty);
 });
 
 // ── Offline add-title reply (handled in the message listener) ────────────────
