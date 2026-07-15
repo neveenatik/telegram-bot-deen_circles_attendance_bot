@@ -195,16 +195,32 @@ test('mg:trmx removes a teacher and returns to the list', async () => {
   assert.ok(data.includes('mg:tch:123:222'), 'remaining teacher stays');
 });
 
-test('mg:tadd opens a force-reply prompt awaiting a group add', async () => {
-  const prompts = [];
+test('mg:tadd shows a role picker (bulk add by role)', async () => {
   const telegram = makeTelegram();
-  const storage = makeStorage({ setReplyPrompt: async (_c, _m, record) => { prompts.push(record); } });
-  const { ctx } = makeCtx({ match: ['mg:tadd:123', '123'] });
+  const storage = makeStorage();
+  const { ctx, calls } = makeCtx({ match: ['mg:tadd:123', '123'] });
   const h = createHandlers({ storage, telegram });
 
   await h.addTeacherPrompt(ctx);
 
+  const data = cbData(calls, 'editMessageText');
+  assert.ok(data.includes('mg:taddr:123:recitationteacher'));
+  assert.ok(data.includes('mg:taddr:123:courseteacher'));
+  assert.ok(data.includes('mg:taddr:123:trainingteacher'));
+  assert.ok(data.includes('mg:taddr:123:homeworkteacher'));
+});
+
+test('mg:taddr opens a force-reply awaiting id|name lines, carrying the role', async () => {
+  const prompts = [];
+  const telegram = makeTelegram();
+  const storage = makeStorage({ setReplyPrompt: async (_c, _m, record) => { prompts.push(record); } });
+  const { ctx } = makeCtx({ match: ['mg:taddr:123:recitationteacher', '123', 'recitationteacher'] });
+  const h = createHandlers({ storage, telegram });
+
+  await h.addTeacherNamesPrompt(ctx);
+
   assert.equal(prompts[0].action, 'groupAddTeacher');
+  assert.equal(prompts[0].role, 'recitationteacher');
   assert.equal(prompts[0].groupId, '123');
 });
 

@@ -141,6 +141,29 @@ test('onText: groupAddTeacher parses "userId | name | type", saves and refreshes
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the teachers panel');
 });
 
+test('onText: groupAddTeacher (role-first) parses "userId | name" lines with the chosen role', async () => {
+  let saved = null;
+  const pending = { action: 'groupAddTeacher', groupId: '123', role: 'recitationteacher', chatId: 42, msgId: 555, awaitingPrompt: false };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    getTeachers: async () => [],
+    saveTeachers: async (_g, list) => { saved = list; },
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: '555123 | أمل محمد\n555124 | هدى علي' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.deepEqual(saved, [
+    { userId: '555123', name: 'أمل محمد', types: ['recitationteacher'] },
+    { userId: '555124', name: 'هدى علي', types: ['recitationteacher'] },
+  ]);
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the teachers panel');
+});
+
 test('onText: groupRenameTeacher renames by userId and refreshes the teacher menu', async () => {
   let saved = null;
   const pending = { action: 'groupRenameTeacher', groupId: '123', chatId: 42, msgId: 555, teacherUserId: '111', awaitingPrompt: false };
