@@ -189,6 +189,73 @@ test('sessionMenu: back button returns to the session type list', async () => {
   assert.ok(data.includes('o:stype:5:main:0'));
 });
 
+test('sessionTypesMenu: exposes the class-level all-sessions view', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionTypesMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sessions:5', '5'] });
+  await sessionTypesMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:allsess:5:0'));
+});
+
+test('allSessions: lists every type in one view, keeping absolute record indices', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { allSessions } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:allsess:5:0', '5', '0'] });
+  await allSessions(ctx);
+  const kb = calls.editMessageText[0][1].reply_markup.inline_keyboard;
+  const sessionButtons = kb.flat().filter((b) => /^o:smenu:/.test(b.callback_data));
+  assert.deepEqual(sessionButtons.map((b) => b.callback_data), ['o:smenu:5:1:1', 'o:smenu:5:1:2', 'o:smenu:5:1:3']);
+});
+
+test('sessionMenu: owner sees a delete-session button', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:smenu:5:1:3', '5', '1', '3'] });
+  await sessionMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:sdel:5:1:3'));
+});
+
+test('sessionDeleteConfirm: shows a confirm button for the picked session', async () => {
+  const store = offlineStorage({ getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionDeleteConfirm } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sdel:5:1:3', '5', '1', '3'] });
+  await sessionDeleteConfirm(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:sdelx:5:1:3'));
+});
+
+test('sessionDelete: removes the session by its row id and re-renders the list', async () => {
+  const deleted = [];
+  let call = 0;
+  const store = offlineStorage({
+    // First read returns all three; after delete, m2 is gone.
+    getAllSessions: async () => {
+      call += 1;
+      return call <= 1 ? MIXED_SESSIONS : MIXED_SESSIONS.filter((s) => s.id !== 'm2');
+    },
+    deleteSession: async (gid, id) => { deleted.push([gid, id]); return { ok: true }; },
+  });
+  const { sessionDelete } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:sdelx:5:1:3', '5', '1', '3'] });
+  await sessionDelete(ctx);
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0][1], 'm2'); // the third session's row id
+  assert.equal(calls.answerCbQuery[0][0], TEXT.offline.sessionDeletedToast('حلقة ب'));
+  const sessionButtons = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().filter((b) => /^o:smenu:/.test(b.callback_data));
+  assert.equal(sessionButtons.length, 2);
+});
+
+test('sessionMenu: hides the delete button for an assistant', async () => {
+  const store = withRole('assistant', { getAllSessions: async () => MIXED_SESSIONS });
+  const { sessionMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:smenu:5:1:3', '5', '1', '3'] });
+  await sessionMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(!data.includes('o:sdel:5:1:3'));
+});
+
 test('assignTeacher: assigns the picked teacher to the session', async () => {
   let assigned = null;
   const store = offlineStorage({
