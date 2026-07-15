@@ -256,7 +256,7 @@ const HTML_DOCS = `<!DOCTYPE html>
       <h3>🎤 إدارة المعلمات</h3>
       <div class="command">
         <div class="cmd">/addteacher [معرّف] | [اسم] | [نوع]</div>
-        <div class="desc">إضافة معلمة أو أكثر (سطر لكل إدخال) — الأنواع: courseteacher, trainingteacher, recitationteacher</div>
+        <div class="desc">إضافة معلمة أو أكثر (سطر لكل إدخال) — الأنواع: courseteacher, trainingteacher, recitationteacher, homeworkteacher</div>
       </div>
 
       <div class="command">
@@ -281,7 +281,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/tagteachers [نوع]</div>
-        <div class="desc">الإشارة إلى المعلمات حسب النوع (courseteacher | trainingteacher | recitationteacher)</div>
+        <div class="desc">الإشارة إلى المعلمات حسب النوع (courseteacher | trainingteacher | recitationteacher | homeworkteacher)</div>
       </div>
 
       <h3>� التواصل والتقارير</h3>
@@ -365,7 +365,7 @@ const HTML_DOCS = `<!DOCTYPE html>
 
       <div class="command">
         <div class="cmd">/manage</div>
-        <div class="desc">لوحة الإدارة الموحّدة (تُفتح بالخاص): الطالبات، طلبات الانضمام، سجل الجلسات، المعلمات، مجموعات التدريب، المواد التعليمية، والصفوف الخاصة</div>
+        <div class="desc">لوحة الإدارة الموحّدة (تُفتح بالخاص): الطالبات، طلبات الانضمام، سجل الجلسات، المعلمات، مجموعات التدريب، المواد التعليمية، التكليفات، والصفوف الخاصة</div>
       </div>
 
       <ul style="margin-left: 2rem;">
@@ -375,6 +375,7 @@ const HTML_DOCS = `<!DOCTYPE html>
         <li><strong>👩‍🏫 المعلمات</strong> — محرّر تفاعلي: إضافة/تعديل الاسم/تغيير النوع/حذف.</li>
         <li><strong>🏷️ مجموعات التدريب</strong> — محرّر تفاعلي: إضافة/إعادة تسمية/حذف/عرض الطالبات.</li>
         <li><strong>📚 المواد التعليمية</strong> — إضافة ملفات (مستند/صورة/فيديو/صوت) بعنوان، ثم إرسالها إلى المجموعة أو حذفها.</li>
+        <li><strong>📓 التكليفات</strong> — متابعة تسليمات الطالبات ومراجعتها في مجموعة التكليف المرتبطة (تُربَط بالأمر <code>/addhomeworkgroup</code>، ويُنشَر التكليف بالوسم <code>#التكليف</code>).</li>
         <li><strong>🧑‍🏫 صفوف بدون مجموعة</strong> — الانتقال إلى صفوفك الخاصة (<code>/offline</code>).</li>
       </ul>
 
@@ -401,6 +402,7 @@ const HTML_DOCS = `<!DOCTYPE html>
         <li><strong>إدارة المعلمات:</strong> إضافة معلمة، تعديل اسمها، تغيير نوعها (معلمة الحلقة / التدريب / التلاوة)، أو حذفها.</li>
         <li><strong>الجلسات والتقارير:</strong> بدء الجلسات وتسجيل الحضور وتوليد تقرير لكل جلسة.</li>
         <li><strong>المواد التعليمية:</strong> إضافة ملفات (مستند/صورة/فيديو/صوت) بعنوان، ثم إرسالها إليكِ في المحادثة الخاصة أو حذفها.</li>
+        <li><strong>التكليفات:</strong> إنشاء تكليف بعنوان وتسجيل حالة كل طالبة يدوياً (لم تُسلِّم ⬜️ / سلّمت 📝 / رُوجِعت ✅).</li>
         <li><strong>تعيين معلمة للجلسة:</strong> من زر «إدارة الجلسة»؛ ويظهر اسم المعلمة المعيّنة أعلى تقرير الجلسة.</li>
       </ul>
 

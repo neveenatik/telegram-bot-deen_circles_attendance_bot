@@ -23,7 +23,7 @@ test('/manage delivers the hub to the admin DM and acks in group', async () => {
   assert.equal(telegram.calls.sendMessage[0][0], ctx.from.id);
   assert.equal(telegram.calls.sendMessage[0][1], HUB.title);
   const data = telegram.calls.sendMessage[0][2].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
-  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'mg:mat:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(data, ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'mg:mat:123', 'mg:hw:123', 'o:root', 'msg:dismiss']);
   assert.equal(calls.reply[0][0], TEXT.panelSentToDm);
 });
 
@@ -55,7 +55,7 @@ test('mg:home re-renders the hub in place', async () => {
   await h.home(ctx);
 
   assert.equal(calls.editMessageText[0][0], HUB.title);
-  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'mg:mat:123', 'o:root', 'msg:dismiss']);
+  assert.deepEqual(cbData(calls, 'editMessageText'), ['mg:members:123', 'mg:pending:123', 'mg:history:123', 'mg:teach:123', 'mg:tgroups:123', 'mg:mat:123', 'mg:hw:123', 'o:root', 'msg:dismiss']);
 });
 
 test('mg:members opens the members panel with a back-to-hub row', async () => {

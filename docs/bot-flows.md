@@ -197,6 +197,8 @@ erDiagram
 | `processed_updates` | Dedupe log so a Telegram retry can't double-process an update. No foreign keys. |
 | `class_managers` | Delegates for **offline (DM) classes** (see §11). One row per `(group, user)` with a `manager_role` of `operator` or `assistant`. The class owner stays in `groups.owner_user_id`. |
 | `class_materials` | Teaching materials per class. Stores only Telegram's `file_id` (Telegram hosts the bytes) plus a title and `file_type` (`document` / `photo` / `video` / `audio`). Soft-deleted via `active`. Reused to resend the file on demand (see §10/§11). |
+| `homework` | Homework items per class. Group items carry a `source_message_id` (the tagged assignment post in the linked homework group); offline items have `null`. Soft-deleted via `active`. The linked homework group's Telegram chat id lives on `group_settings.homework_group_id`. |
+| `homework_submissions` | One row per `(homework, member)`. Tracks `submission_message_id` (the student's reply), plus `reviewed` / `reviewed_by` / `reviewed_at` when a teacher reviews it. Unique on `(homework_id, member_id)`. |
 
 **Two things worth remembering:**
 - A participant is a member **or** a guest — the row uses `member_id` for
@@ -525,8 +527,10 @@ Button taps carry a compact `prefix:...` payload. For contributors:
 | `h:*` | History browse & edit | `actions/history.js` |
 | `mg:*` | Admin control hub (`/manage`): members, pending, history, teachers, training groups | `actions/hub.js` |
 | `mg:mat*` | Teaching materials from the `/manage` hub (add / send to group / remove) | `actions/materials.ts` |
+| `mg:hw*` | Homework tracking from the `/manage` hub (list / item breakdown / tag non-submitters / remove) | `actions/homework.ts` |
 | `o:*` | Offline (DM) classes: home, roster, teachers, sessions, managers | `actions/offline.js` |
 | `o:mat*` | Teaching materials from the offline class hub (add / send to me / remove) | `actions/materials.ts` |
+| `o:hw*` | Homework tracking from the offline class hub (add / per-student toggle / remove) | `actions/homework.ts` |
 | `cf:ok` / `cf:cancel` | Creator-action confirmation | `actions/confirm.js` |
 | `aw:cancel` | Cancel a text-reply prompt | `actions/manage.js` |
 | `msg:dismiss` | Delete an inline widget | `actions/history.js` |

@@ -95,3 +95,58 @@ test('listtraininggroups: empty list is reported', async () => {
 
   assert.equal(calls.reply[0][0], TEXT.trainingGroupsEmpty);
 });
+
+test('addhomeworkgroup: non-admin is rejected', async () => {
+  const { addhomeworkgroup } = createHandlers({ storage: groupsStorage() });
+  const { ctx, calls } = makeCtx({ text: '/addhomeworkgroup -100' });
+
+  await addhomeworkgroup(ctx);
+
+  assert.equal(calls.reply[0][0], TEXT.adminOnly);
+});
+
+test('addhomeworkgroup: an invalid id is rejected', async () => {
+  const { addhomeworkgroup } = createHandlers({ storage: groupsStorage() });
+  const { ctx, calls } = makeCtx({ admin: true, text: '/addhomeworkgroup notanid' });
+
+  await addhomeworkgroup(ctx);
+
+  assert.equal(calls.reply[0][0], TEXT.invalidAddHomeworkGroupFormat);
+});
+
+test('addhomeworkgroup: a valid id links the homework group', async () => {
+  const links = [];
+  const { addhomeworkgroup } = createHandlers({
+    storage: groupsStorage({ setHomeworkGroup: async (main, hw) => { links.push([main, hw]); } }),
+  });
+  const { ctx, calls } = makeCtx({ admin: true, chatId: 123, text: '/addhomeworkgroup -1009999' });
+
+  await addhomeworkgroup(ctx);
+
+  assert.deepEqual(links, [['123', '-1009999']]);
+  assert.equal(calls.replyWithMarkdown.length, 1);
+});
+
+test('removehomeworkgroup: reports when nothing is linked', async () => {
+  const { removehomeworkgroup } = createHandlers({
+    storage: groupsStorage({ getHomeworkGroupId: async () => null }),
+  });
+  const { ctx, calls } = makeCtx({ admin: true, text: '/removehomeworkgroup' });
+
+  await removehomeworkgroup(ctx);
+
+  assert.equal(calls.reply[0][0], TEXT.noHomeworkGroupLinked);
+});
+
+test('removehomeworkgroup: clears an existing link', async () => {
+  let cleared = 0;
+  const { removehomeworkgroup } = createHandlers({
+    storage: groupsStorage({ getHomeworkGroupId: async () => '-1009999', removeHomeworkGroup: async () => { cleared += 1; } }),
+  });
+  const { ctx, calls } = makeCtx({ admin: true, text: '/removehomeworkgroup' });
+
+  await removehomeworkgroup(ctx);
+
+  assert.equal(cleared, 1);
+  assert.equal(calls.reply[0][0], TEXT.homeworkGroupRemoved);
+});

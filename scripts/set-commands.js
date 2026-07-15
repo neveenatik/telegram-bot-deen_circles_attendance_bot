@@ -32,6 +32,8 @@ const commands = [
   { command: 'addtraininggroup', description: 'إضافة مجموعة تدريب للاختيار السريع (للمشرف)' },
   { command: 'removetraininggroup', description: 'حذف مجموعة تدريب من القائمة (للمشرف)' },
   { command: 'listtraininggroups', description: 'عرض مجموعات التدريب المضافة (للمشرف)' },
+  { command: 'addhomeworkgroup', description: 'ربط مجموعة التكليف بالحلقة (للمشرف)' },
+  { command: 'removehomeworkgroup', description: 'إلغاء ربط مجموعة التكليف (للمشرف)' },
   { command: 'removestudents', description: 'حذف جميع الطالبات المسجلات (لمنشئ المجموعة)' },
   { command: 'renamestudent', description: 'تعديل اسم طالبة أو أكثر (للمشرف)' },
   { command: 'tagstudents', description: 'الإشارة إلى جميع الطالبات المسجلات للإعلان (للمشرف)' },

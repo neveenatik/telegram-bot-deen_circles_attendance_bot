@@ -34,6 +34,10 @@ create index if not exists idx_groups_owner_user_id
 create table if not exists group_settings (
   group_id bigint primary key references groups(id) on delete cascade,
   training_groups jsonb not null default '[]'::jsonb,
+  -- Telegram chat id of the dedicated homework group linked to this main group
+  -- (null when none). The homework group's own row also sets parent_group_id to
+  -- this group, mirroring how training groups are linked.
+  homework_group_id text,
   retention_days integer not null default 90,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -77,7 +81,7 @@ create table if not exists teachers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (group_id, telegram_user_id),
-  check (teacher_type in ('courseteacher', 'trainingteacher', 'recitationteacher'))
+  check (teacher_type in ('courseteacher', 'trainingteacher', 'recitationteacher', 'homeworkteacher'))
 );
 
 create unique index if not exists uq_teachers_group_name_active
@@ -125,6 +129,45 @@ create table if not exists class_materials (
 create index if not exists idx_class_materials_group_active
   on class_materials (group_id, created_at)
   where active = true;
+
+-- Homework tracking. An admin or homework teacher posts an assignment (tagged
+-- #التكليف) in the linked homework group; registered members reply to submit;
+-- homework teachers reply to a submission to mark it reviewed. Offline classes
+-- have no group thread, so items and per-student status are managed by hand from
+-- the class hub (source_message_id / submission_message_id stay null there).
+-- group_id is the MAIN (or offline) class; cascades on class delete.
+create table if not exists homework (
+  id bigserial primary key,
+  group_id bigint not null references groups(id) on delete cascade,
+  title text not null,
+  source_message_id bigint,
+  posted_by text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_homework_group_active
+  on homework (group_id, created_at)
+  where active = true;
+
+-- One row per (homework, member). A row exists once the member has submitted;
+-- reviewed flips true when a homework teacher replies to the submission.
+create table if not exists homework_submissions (
+  id bigserial primary key,
+  homework_id bigint not null references homework(id) on delete cascade,
+  member_id bigint references members(id) on delete set null,
+  submission_message_id bigint,
+  submitted_at timestamptz not null default now(),
+  reviewed boolean not null default false,
+  reviewed_by text,
+  reviewed_at timestamptz,
+  updated_at timestamptz not null default now(),
+  unique (homework_id, member_id)
+);
+
+create index if not exists idx_homework_submissions_homework
+  on homework_submissions (homework_id);
 
 -- Pending registration queue from /myid
 create table if not exists pending_registrations (
@@ -325,6 +368,16 @@ create trigger trg_class_materials_updated_at
 before update on class_materials
 for each row execute function touch_updated_at();
 
+drop trigger if exists trg_homework_updated_at on homework;
+create trigger trg_homework_updated_at
+before update on homework
+for each row execute function touch_updated_at();
+
+drop trigger if exists trg_homework_submissions_updated_at on homework_submissions;
+create trigger trg_homework_submissions_updated_at
+before update on homework_submissions
+for each row execute function touch_updated_at();
+
 drop trigger if exists trg_pending_registrations_updated_at on pending_registrations;
 create trigger trg_pending_registrations_updated_at
 before update on pending_registrations
@@ -388,6 +441,8 @@ alter table group_settings enable row level security;
 alter table members enable row level security;
 alter table teachers enable row level security;
 alter table class_materials enable row level security;
+alter table homework enable row level security;
+alter table homework_submissions enable row level security;
 alter table pending_registrations enable row level security;
 alter table sessions enable row level security;
 alter table session_participants enable row level security;
