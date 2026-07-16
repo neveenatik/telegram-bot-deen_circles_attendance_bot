@@ -518,7 +518,10 @@ function weekBody(slots: Slot[], fromTz: string, viewTz: string, weekStart: numb
     const list = byDay.get(d);
     if (!list || !list.length) continue;
     list.sort((a, b) => timeSortKey(a.time).localeCompare(timeSortKey(b.time)));
-    const lines = list.map(({ time, s }) => TT.weekSlotLine(timeDisplay(time), typeLabel(s.sessionType), s.teacherName));
+    const lines = list.map(({ time, s }) =>
+      (isAllDaySlot(time)
+        ? TT.weekSlotLineAllDay(TT.allDayLabel, typeLabel(s.sessionType), s.teacherName)
+        : TT.weekSlotLine(timeDisplay(time), typeLabel(s.sessionType), s.teacherName)));
     blocks.push(`${TT.dayHeader(dayLabel(d))}\n${lines.join('\n')}`);
   }
   return blocks.join('\n\n');
