@@ -14,14 +14,14 @@ import type { Context, Telegram } from 'telegraf';
 import { TEXT } from '../../text.js';
 import { beginForceReplyAwaiting, replyEphemeral, logTelegramError } from '../../helpers.js';
 import { clampButtonLabel } from '../../historyUtils.js';
+import { SESSION_TYPES } from '../../sessionTypes.js';
 
 const TT = TEXT.timetable;
 
-// Slot types a weekly-roster entry may schedule. The session types mirror the
-// offline attendance types (SESSION_TYPES);
-// `homeworkReview` is a plan-only activity (reviewing/grading homework) that
-// never maps to an attendance session.
-const SCHEDULE_TYPES = ['main', 'registeredSecondary', 'training', 'homeworkReview'];
+// Slot types a weekly-roster entry may schedule: every attendance session type
+// (SESSION_TYPES), plus `homeworkReview` — a plan-only activity (reviewing/
+// grading homework) that never maps to an attendance session.
+const SCHEDULE_TYPES = [...SESSION_TYPES, 'homeworkReview'];
 
 // Some activities span the whole day rather than a fixed hour (e.g. homework
 // review). Such slots store this sentinel in `time_of_day` instead of an HH:MM,

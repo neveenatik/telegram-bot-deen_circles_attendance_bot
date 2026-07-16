@@ -73,6 +73,10 @@ test('addPickType: lists the schedulable session types', async () => {
   const data = editData(calls);
   assert.ok(data.includes('o:ttaddt:5:main'));
   assert.ok(data.includes('o:ttaddt:5:training'));
+  assert.ok(data.includes('o:ttaddt:5:open'));
+  assert.ok(data.includes('o:ttaddt:5:registeredSecondary'));
+  assert.ok(data.includes('o:ttaddt:5:personalRecitation'));
+  assert.ok(data.includes('o:ttaddt:5:groupRecitation'));
   assert.ok(data.includes('o:ttaddt:5:homeworkReview'));
 });
 
