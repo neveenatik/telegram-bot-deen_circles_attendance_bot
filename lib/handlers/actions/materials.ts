@@ -205,7 +205,7 @@ function materialSelectView(surface: Surface, token: string, material: Material,
   const rows = material.files.map((f, i) => {
     const checked = (mask >> i) & 1;
     const name = f.fileName || MAT.fileFallback(i + 1);
-    const label = `${checked ? '☑️' : '⬜️'} ${TYPE_ICON[f.fileType]} ${name}`;
+    const label = `${checked ? '✅ ' : ''}${TYPE_ICON[f.fileType]} ${name}`;
     return [Markup.button.callback(clampButtonLabel(label), `${togBase}:${i}:${mask}`)];
   });
   rows.push([Markup.button.callback(MAT.sendSelectedButton, sendCb)]);
@@ -242,7 +242,7 @@ export function materialFilesView(surface: Surface, token: string, material: Mat
   const rows = material.files.map((f, i) => {
     const checked = (mask >> i) & 1;
     const name = f.fileName || MAT.fileFallback(i + 1);
-    const label = `${checked ? '☑️' : '⬜️'} ${TYPE_ICON[f.fileType]} ${name}`;
+    const label = `${checked ? '✅ ' : ''}${TYPE_ICON[f.fileType]} ${name}`;
     return [Markup.button.callback(clampButtonLabel(label), `${togBase}:${i}:${mask}`)];
   });
   rows.push([
