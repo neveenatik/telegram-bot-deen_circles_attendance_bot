@@ -17,9 +17,10 @@ import { clampButtonLabel } from '../../historyUtils.js';
 
 const TT = TEXT.timetable;
 
-// Slot types a weekly-roster entry may schedule. The first three mirror
-// OFFLINE_SESSION_TYPES in offline.js; `homeworkReview` is a plan-only activity
-// (reviewing/grading homework) that never maps to an attendance session.
+// Slot types a weekly-roster entry may schedule. The session types mirror the
+// offline attendance types (SESSION_TYPES);
+// `homeworkReview` is a plan-only activity (reviewing/grading homework) that
+// never maps to an attendance session.
 const SCHEDULE_TYPES = ['main', 'registeredSecondary', 'training', 'homeworkReview'];
 
 // Some activities span the whole day rather than a fixed hour (e.g. homework

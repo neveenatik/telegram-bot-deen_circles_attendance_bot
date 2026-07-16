@@ -150,6 +150,31 @@ test('createSession: seeds roster participants and saves the session', async () 
   assert.equal(calls.editMessageText.length, 1);
 });
 
+test('newSessionMenu: offers every active session type including recitation', async () => {
+  const store = offlineStorage();
+  const { newSessionMenu } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:newsess:5', '5'] });
+  await newSessionMenu(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  for (const type of ['main', 'training', 'open', 'registeredSecondary', 'personalRecitation', 'groupRecitation']) {
+    assert.ok(data.includes(`o:mksess:5:${type}`), `missing ${type}`);
+  }
+});
+
+test('createSession: accepts a groupRecitation session', async () => {
+  const saved = [];
+  const store = offlineStorage({
+    saveSessions: async (gid, type, list) => { saved.push({ gid, type, list }); },
+  });
+  const { createSession } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:mksess:5:groupRecitation', '5', 'groupRecitation'] });
+  await createSession(ctx);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].type, 'groupRecitation');
+  assert.equal(saved[0].list[0].type, 'groupRecitation');
+  assert.equal(calls.editMessageText.length, 1);
+});
+
 const MIXED_SESSIONS = [
   { id: 'm1', seriesId: 1, type: 'main', name: 'حلقة أ', startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:00:00Z', participants: {} },
   { id: 't1', seriesId: 1, type: 'training', name: 'تدريب أ', startedAt: '2026-01-02T00:00:00Z', endedAt: '2026-01-02T00:00:00Z', participants: {} },

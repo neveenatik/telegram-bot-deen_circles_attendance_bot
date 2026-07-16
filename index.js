@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
 import storage from './lib/storage.js';
-import { ACTIVE_SESSION_TYPES } from './lib/sessionTypes.js';
+import { SESSION_TYPES } from './lib/sessionTypes.js';
 import { TEXT } from './lib/text.js';
 import { isAdmin } from './lib/guards.js';
 import { getErrorDescription, replyEphemeral } from './lib/helpers.js';
@@ -118,7 +118,7 @@ bot.use(async (ctx, next) => {
 
       let activeType = null;
       let session = null;
-      for (const type of ACTIVE_SESSION_TYPES) {
+      for (const type of SESSION_TYPES) {
         const candidate = await storage.getSession(groupId, type);
         if (candidate && candidate.active) {
           activeType = type;
