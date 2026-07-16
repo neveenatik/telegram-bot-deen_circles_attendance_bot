@@ -147,7 +147,9 @@ create index if not exists idx_class_materials_group_active
 
 -- One row per file attached to a lesson. position orders files within a lesson
 -- (1-based). Hard-deleted with the lesson (cascade); the lesson itself is
--- soft-deleted via class_materials.active.
+-- soft-deleted via class_materials.active. media_group_id tags files uploaded
+-- together as a Telegram album so a captioned item can share its name onto the
+-- album's other (caption-less) items, which arrive as separate webhook calls.
 create table if not exists class_material_files (
   id bigserial primary key,
   material_id bigint not null references class_materials(id) on delete cascade,
@@ -155,12 +157,17 @@ create table if not exists class_material_files (
   file_type text not null,
   file_name text,
   position integer not null default 1,
+  media_group_id text,
   created_at timestamptz not null default now(),
   check (file_type in ('document', 'photo', 'video', 'audio'))
 );
 
 create index if not exists idx_class_material_files_material
   on class_material_files (material_id, position);
+
+create index if not exists idx_class_material_files_album
+  on class_material_files (material_id, media_group_id)
+  where media_group_id is not null;
 
 -- Homework tracking. An admin or homework teacher posts an assignment (tagged
 -- #التكليف) in the linked homework group; registered members reply to submit;

@@ -25,6 +25,7 @@ interface NewMaterialFile {
   fileId: string;
   fileType: FileType;
   fileName: string | null;
+  mediaGroupId?: string | null;
 }
 
 interface MaterialFile extends NewMaterialFile {
@@ -81,6 +82,7 @@ interface Storage {
   removeMaterialFile(groupId: string, materialId: number | string, fileId: number | string): Promise<void>;
   renameMaterial(groupId: string, id: string, title: string): Promise<void>;
   renameMaterialFile(groupId: string, materialId: number | string, fileId: number | string, name: string): Promise<void>;
+  renameAlbumFiles(materialId: number | string, mediaGroupId: string, name: string): Promise<void>;
   getAlbumCaption(mediaGroupId: string): Promise<string | null>;
   setAlbumCaption(mediaGroupId: string, caption: string): Promise<void>;
   resolveManageableClass(gref: string, userId: number | string): Promise<ManageableClass | null>;
@@ -291,6 +293,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     addMaterialFile,
     removeMaterial,
     removeMaterialFile,
+    renameAlbumFiles,
     getAlbumCaption,
     setAlbumCaption,
     resolveManageableClass,
@@ -942,9 +945,10 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
   // carries reply_to) appends every file, not just one. The first file of a NEW
   // lesson sets its title. Each file is named by its own caption; the items of
   // an album share one name because Telegram tags them with the same
-  // media_group_id, which we use to look the caption back up (see
-  // get/setAlbumCaption) even though each item is a separate webhook call.
-  // Done closes the session.
+  // media_group_id: the captioned item stores the caption (setAlbumCaption) and
+  // back-fills its already-saved siblings (renameAlbumFiles), while later
+  // siblings read it back (getAlbumCaption) — so every ordering of the separate
+  // webhook calls converges on one name. Done closes the session.
 
   async function onMedia(ctx: Context, next: () => Promise<void>): Promise<void> {
     const msg = ctx.message as UploadedMessage | undefined;
@@ -1006,7 +1010,12 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       // attachment filename, then the lesson title — so a captioned batch shares
       // one name instead of "file N" placeholders.
       fileName: partName || file.fileName || title,
+      mediaGroupId,
     });
+    // If this item carried the album's caption, stamp it onto any siblings that
+    // were saved before it (they arrive as separate, possibly out-of-order
+    // webhook calls) so the whole batch ends up with one name.
+    if (caption && mediaGroupId) await renameAlbumFiles(materialId, mediaGroupId, caption);
     count += 1;
 
     // Persist the session in place (no prompt rotation) so more files keep

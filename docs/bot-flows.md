@@ -403,8 +403,10 @@ session stays open so several files (or albums) can be appended; the first
 file's caption is the lesson title, and each file is named by its own caption.
 Telegram puts a caption on only one item of an album and delivers each item as a
 separate webhook call, so the caption is stashed by `media_group_id`
-(`get`/`setAlbumCaption`) and every sibling reads it back — a whole batch shares
-one readable name instead of `file 1`, `file 2`, ….
+(`get`/`setAlbumCaption`) and every file row is tagged with that id: later
+siblings read the caption back, and the captioned item **back-fills** the name
+onto siblings already saved (`renameAlbumFiles`) — so whatever order the calls
+run in, a whole batch shares one readable name instead of `file 1`, `file 2`, ….
 
 ---
 

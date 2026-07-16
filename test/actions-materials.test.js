@@ -31,6 +31,7 @@ function matStorage(overrides = {}) {
     renameMaterialFile: async () => {},
     getAlbumCaption: async () => null,
     setAlbumCaption: async () => {},
+    renameAlbumFiles: async () => {},
     ...overrides,
   });
 }
@@ -453,16 +454,20 @@ test('onMedia: an uncaptioned album item inherits the album caption via media_gr
   assert.equal(files.length, 1);
   // Inherits the album caption, not the lesson title.
   assert.equal(files[0].fileName, 'النطق');
+  // The file is tagged with its album so later back-fills can find it.
+  assert.equal(files[0].mediaGroupId, 'G1');
 });
 
 test('onMedia: a captioned album item records the album caption for its siblings', async () => {
   const files = [];
   const albums = [];
+  const backfills = [];
   const storage = matStorage({
     getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', count: 1 }),
     addMaterialFile: async (id, f) => { files.push(f); return 4; },
     setReplyPrompt: async () => {},
     setAlbumCaption: async (mgid, caption) => { albums.push({ mgid, caption }); },
+    renameAlbumFiles: async (mid, mgid, name) => { backfills.push({ mid, mgid, name }); },
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
@@ -472,8 +477,41 @@ test('onMedia: a captioned album item records the album caption for its siblings
   await h.onMedia(ctx, async () => {});
 
   assert.equal(files[0].fileName, 'الكتابة');
+  assert.equal(files[0].mediaGroupId, 'G2');
   // The caption is stashed under the album id so later items reuse it.
   assert.deepEqual(albums, [{ mgid: 'G2', caption: 'الكتابة' }]);
+  // …and back-filled onto any siblings already saved for this album.
+  assert.deepEqual(backfills, [{ mid: 2, mgid: 'G2', name: 'الكتابة' }]);
+});
+
+test('onMedia: an out-of-order sibling saved before the caption is back-filled by it', async () => {
+  // Simulates add-to-existing lesson "letters": an uncaptioned album item is
+  // processed first (album caption not stored yet) and lands with the lesson
+  // title; then the captioned item back-fills the whole album to its caption.
+  const files = [];
+  const backfills = [];
+  let stored = null;
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', count: 1 }),
+    addMaterialFile: async (id, f) => { files.push(f); return files.length; },
+    setReplyPrompt: async () => {},
+    getAlbumCaption: async () => stored,
+    setAlbumCaption: async (_mgid, caption) => { stored = caption; },
+    renameAlbumFiles: async (mid, mgid, name) => { backfills.push({ mid, mgid, name }); },
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+
+  // 1) Uncaptioned sibling arrives first → falls back to the lesson title.
+  const first = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'P1' }], mediaGroupId: 'G3' });
+  await h.onMedia(first.ctx, async () => {});
+  assert.equal(files[0].fileName, 'الحروف');
+
+  // 2) Captioned item arrives → stores + back-fills the album to its caption.
+  const second = mediaCtx({ caption: 'النطق', document: null, photo: [{ file_id: 'P2' }], mediaGroupId: 'G3' });
+  await h.onMedia(second.ctx, async () => {});
+  assert.equal(files[1].fileName, 'النطق');
+  assert.deepEqual(backfills, [{ mid: 2, mgid: 'G3', name: 'النطق' }]);
 });
 
 test('onMedia: a later file caption becomes that file\'s name', async () => {
