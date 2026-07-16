@@ -36,6 +36,7 @@ interface MaterialFile extends NewMaterialFile {
 interface NewMaterial {
   title: string;
   addedBy: string | null;
+  mediaGroupId?: string | null;
 }
 
 interface Material extends NewMaterial {
@@ -83,6 +84,7 @@ interface Storage {
   renameMaterial(groupId: string, id: string, title: string): Promise<void>;
   renameMaterialFile(groupId: string, materialId: number | string, fileId: number | string, name: string): Promise<void>;
   renameAlbumFiles(materialId: number | string, mediaGroupId: string, name: string): Promise<void>;
+  renameAlbumMaterial(materialId: number | string, mediaGroupId: string, title: string): Promise<void>;
   getAlbumCaption(mediaGroupId: string): Promise<string | null>;
   setAlbumCaption(mediaGroupId: string, caption: string): Promise<void>;
   resolveManageableClass(gref: string, userId: number | string): Promise<ManageableClass | null>;
@@ -294,6 +296,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     removeMaterial,
     removeMaterialFile,
     renameAlbumFiles,
+    renameAlbumMaterial,
     getAlbumCaption,
     setAlbumCaption,
     resolveManageableClass,
@@ -987,7 +990,13 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
 
     if (!materialId) {
       // First file of a new lesson: its caption (or filename) is the title.
-      title = partName || file.fileName || null;
+      // Album items arrive as separate, possibly out-of-order webhook calls, so
+      // an item may reach here before the captioned one. Rather than drop it,
+      // create the lesson under the album's media_group_id (addMaterial upserts,
+      // so concurrent items collapse onto one lesson) with a placeholder title
+      // the captioned sibling back-fills. Single (non-album) files still require
+      // a caption up front.
+      title = partName || file.fileName || (mediaGroupId ? MAT.albumFallbackTitle : null);
       if (!title) {
         await replyEphemeral(ctx, MAT.noCaption);
         return;
@@ -995,6 +1004,7 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
       materialId = await addMaterial(groupId, {
         title,
         addedBy: ctx.from ? String(ctx.from.id) : null,
+        mediaGroupId,
       });
       if (!materialId) {
         await delReplyPrompt(chatKey, promptMsgId);
@@ -1014,9 +1024,24 @@ export function createHandlers({ storage, telegram }: { storage: Storage; telegr
     });
     // If this item carried the album's caption, stamp it onto any siblings that
     // were saved before it (they arrive as separate, possibly out-of-order
-    // webhook calls) so the whole batch ends up with one name.
-    if (caption && mediaGroupId) await renameAlbumFiles(materialId, mediaGroupId, caption);
-    count += 1;
+    // webhook calls). renameAlbumFiles fixes their file names; renameAlbumMaterial
+    // fixes the lesson title, but only when the lesson was created from THIS
+    // album (its media_group_id matches) — never for add-file into an existing
+    // lesson.
+    if (caption && mediaGroupId) {
+      await renameAlbumFiles(materialId, mediaGroupId, caption);
+      await renameAlbumMaterial(materialId, mediaGroupId, caption);
+    }
+
+    // Derive the running count from the lesson itself: concurrent album items
+    // all read the same stale pending.count, so trusting it would undercount.
+    const saved = await getMaterialById(groupId, String(materialId));
+    if (saved) {
+      count = saved.fileCount;
+      title = saved.title;
+    } else {
+      count += 1;
+    }
 
     // Persist the session in place (no prompt rotation) so more files keep
     // appending until Done.

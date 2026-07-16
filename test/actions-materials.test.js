@@ -32,6 +32,7 @@ function matStorage(overrides = {}) {
     getAlbumCaption: async () => null,
     setAlbumCaption: async () => {},
     renameAlbumFiles: async () => {},
+    renameAlbumMaterial: async () => {},
     ...overrides,
   });
 }
@@ -398,6 +399,15 @@ test('onMedia: a later file appends to the open lesson without a caption', async
     getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'عنوان المادة', count: 1 }),
     addMaterial: async (g, m) => { added.push({ g, m }); return 99; },
     addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    // The lesson now holds two files; the running count is read from the DB.
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: 'عنوان المادة', addedBy: null, createdAt: null,
+      files: [
+        { id: 11, fileId: 'FID1', fileType: 'document', fileName: null, position: 1 },
+        { id: 12, fileId: 'FIDY', fileType: 'document', fileName: 'b.pdf', position: 2 },
+      ],
+      fileCount: 2,
+    }),
     setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ chatId, msgId, rec }); },
   });
   const { telegram } = telegramWithSend();
@@ -462,12 +472,14 @@ test('onMedia: a captioned album item records the album caption for its siblings
   const files = [];
   const albums = [];
   const backfills = [];
+  const titleBackfills = [];
   const storage = matStorage({
     getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: 2, title: 'الحروف', count: 1 }),
     addMaterialFile: async (id, f) => { files.push(f); return 4; },
     setReplyPrompt: async () => {},
     setAlbumCaption: async (mgid, caption) => { albums.push({ mgid, caption }); },
     renameAlbumFiles: async (mid, mgid, name) => { backfills.push({ mid, mgid, name }); },
+    renameAlbumMaterial: async (mid, mgid, title) => { titleBackfills.push({ mid, mgid, title }); },
   });
   const { telegram } = telegramWithSend();
   const h = createHandlers({ storage, telegram });
@@ -482,6 +494,71 @@ test('onMedia: a captioned album item records the album caption for its siblings
   assert.deepEqual(albums, [{ mgid: 'G2', caption: 'الكتابة' }]);
   // …and back-filled onto any siblings already saved for this album.
   assert.deepEqual(backfills, [{ mid: 2, mgid: 'G2', name: 'الكتابة' }]);
+  // The lesson title is only back-filled when the lesson was created from this
+  // album; renameAlbumMaterial is scoped to media_group_id so an existing
+  // lesson (mismatched media_group_id) is left untouched by the DB update.
+  assert.deepEqual(titleBackfills, [{ mid: 2, mgid: 'G2', title: 'الكتابة' }]);
+});
+
+test('onMedia: a brand-new album lesson is created once under its media_group_id', async () => {
+  // All items of a new-lesson album race with materialId=null. addMaterial is
+  // idempotent by media_group_id, so every item resolves to one lesson.
+  const added = [];
+  const files = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: null, count: 0 }),
+    addMaterial: async (g, m) => { added.push(m); return 7; },
+    addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: 'التجويد', addedBy: null, createdAt: null,
+      files: [{ id: 41, fileId: 'A', fileType: 'photo', fileName: 'التجويد', position: 1 }], fileCount: 1,
+    }),
+    setReplyPrompt: async () => {},
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  // The captioned first item of album "G7".
+  const { ctx } = mediaCtx({ caption: 'التجويد', document: null, photo: [{ file_id: 'A' }], mediaGroupId: 'G7' });
+
+  await h.onMedia(ctx, async () => {});
+
+  assert.equal(added.length, 1);
+  assert.equal(added[0].title, 'التجويد');
+  // The lesson carries the album id so concurrent siblings collapse onto it.
+  assert.equal(added[0].mediaGroupId, 'G7');
+  assert.equal(files[0].id, 7);
+});
+
+test('onMedia: an uncaptioned album item creating a new lesson uses a placeholder title', async () => {
+  // A caption-less album item is processed before the captioned one, so it must
+  // still create the lesson (with a placeholder the captioned item back-fills)
+  // instead of rejecting the file with "no caption".
+  const added = [];
+  const files = [];
+  const storage = matStorage({
+    getReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, materialId: null, count: 0 }),
+    addMaterial: async (g, m) => { added.push(m); return 8; },
+    addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: TEXT.materials.albumFallbackTitle, addedBy: null, createdAt: null,
+      files: [{ id: 42, fileId: 'B', fileType: 'photo', fileName: null, position: 1 }], fileCount: 1,
+    }),
+    getAlbumCaption: async () => null,
+    setReplyPrompt: async () => {},
+  });
+  const { telegram } = telegramWithSend();
+  const h = createHandlers({ storage, telegram });
+  // No caption, a photo (no filename), part of album "G8".
+  const { ctx } = mediaCtx({ caption: '', document: null, photo: [{ file_id: 'B' }], mediaGroupId: 'G8' });
+
+  let rejected = false;
+  await h.onMedia(ctx, async () => { rejected = true; });
+
+  assert.equal(rejected, false);
+  assert.equal(added.length, 1, 'the file is not dropped — a lesson is created');
+  assert.equal(added[0].title, TEXT.materials.albumFallbackTitle);
+  assert.equal(added[0].mediaGroupId, 'G8');
+  assert.equal(files.length, 1);
 });
 
 test('onMedia: an out-of-order sibling saved before the caption is back-filled by it', async () => {
@@ -605,6 +682,14 @@ test('onMedia: an album item without a reply appends to the active session', asy
     getReplyPrompt: async () => null,
     getActiveReplyPrompt: async () => ({ action: 'materialUpload', surface: 'offline', groupId: 'offline:o:1', gref: '5', chatId: 777, msgId: 555, promptMsgId: 600, materialId: 2, title: 'الدرس', count: 1 }),
     addMaterialFile: async (id, f) => { files.push({ id, f }); return 4; },
+    getMaterialById: async (_g, id) => ({
+      id: Number(id), title: 'الدرس', addedBy: null, createdAt: null,
+      files: [
+        { id: 11, fileId: 'FID1', fileType: 'document', fileName: null, position: 1 },
+        { id: 12, fileId: 'FID2', fileType: 'document', fileName: 'second.pdf', position: 2 },
+      ],
+      fileCount: 2,
+    }),
     setReplyPrompt: async (chatId, msgId, rec) => { prompts.push({ msgId, rec }); },
   });
   const { telegram } = telegramWithSend();

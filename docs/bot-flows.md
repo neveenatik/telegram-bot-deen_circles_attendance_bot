@@ -402,11 +402,18 @@ reuses the same force-reply record (`action: 'materialUpload'`), but because
 session stays open so several files (or albums) can be appended; the first
 file's caption is the lesson title, and each file is named by its own caption.
 Telegram puts a caption on only one item of an album and delivers each item as a
-separate webhook call, so the caption is stashed by `media_group_id`
-(`get`/`setAlbumCaption`) and every file row is tagged with that id: later
-siblings read the caption back, and the captioned item **back-fills** the name
-onto siblings already saved (`renameAlbumFiles`) — so whatever order the calls
-run in, a whole batch shares one readable name instead of `file 1`, `file 2`, ….
+separate, possibly concurrent webhook call, so the caption is stashed by
+`media_group_id` (`get`/`setAlbumCaption`) and every file row is tagged with
+that id: later siblings read the caption back, and the captioned item
+**back-fills** both the file names (`renameAlbumFiles`) and, when the lesson was
+created from that album, its title (`renameAlbumMaterial`) onto siblings already
+saved. For a **brand-new** lesson every album item sees `materialId = null`, so
+lesson creation is made idempotent by `media_group_id` (a unique index lets the
+concurrent inserts collapse onto one lesson via upsert); an item that arrives
+before the captioned one still creates the lesson under a placeholder title the
+captioned sibling later fixes, instead of being dropped. So whatever order the
+calls run in, a whole batch lands in one lesson with one readable name instead
+of duplicate lessons or `file 1`, `file 2`, ….
 
 ---
 

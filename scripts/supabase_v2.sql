@@ -130,13 +130,17 @@ create index if not exists idx_class_managers_user_id
 -- class. The lesson lives here; its files live in class_material_files. We store
 -- only Telegram's file_id (Telegram hosts the bytes); the same file_id is reused
 -- to resend the files to the group (live) or back to the uploader's DM (offline).
--- Scoped to a class and cascades on delete.
+-- Scoped to a class and cascades on delete. media_group_id tags a lesson created
+-- from a Telegram album (several files sent at once); a unique index lets the
+-- album's separate, concurrent webhook calls collapse onto ONE lesson (upsert on
+-- conflict) instead of racing to create duplicates.
 create table if not exists class_materials (
   id bigserial primary key,
   group_id bigint not null references groups(id) on delete cascade,
   title text not null,
   added_by text,
   active boolean not null default true,
+  media_group_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -144,6 +148,10 @@ create table if not exists class_materials (
 create index if not exists idx_class_materials_group_active
   on class_materials (group_id, created_at)
   where active = true;
+
+create unique index if not exists uq_class_materials_album
+  on class_materials (media_group_id)
+  where media_group_id is not null;
 
 -- One row per file attached to a lesson. position orders files within a lesson
 -- (1-based). Hard-deleted with the lesson (cascade); the lesson itself is

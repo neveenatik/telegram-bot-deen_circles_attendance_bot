@@ -140,6 +140,7 @@ export function makeStorage(overrides = {}) {
     getAlbumCaption: async () => null,
     setAlbumCaption: async () => {},
     renameAlbumFiles: async () => {},
+    renameAlbumMaterial: async () => {},
     getParentGroupId: async () => null,
     setParentGroup: async () => {},
     getTrainingGroups: async () => [],
