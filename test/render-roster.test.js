@@ -150,6 +150,74 @@ test('renderHtmlToPng produces valid PNGs from the day and teacher rosters', { s
   }
 });
 
+// ── Dense, real-world fixtures ────────────────────────────────────────────
+// Mirror an actual busy week so the render exercises stacked all-day reviews,
+// multiple same-time trainings and mixed session types end to end.
+const REVIEW = 'مراجعة التكاليف';
+const CORRECT = 'تصحيح التلاوة';
+const BASIC = 'الحلقة الأساسية';
+const TRAIN = 'حلقة تدريب';
+const ALLDAY = 'طوال اليوم';
+const review = (t) => ({ time: ALLDAY, kind: 'homeworkReview', label: REVIEW, teacher: t });
+const mainSlot = (time, t) => ({ time, kind: 'main', label: BASIC, teacher: t });
+const correct = (time, t) => ({ time, kind: 'registeredSecondary', label: CORRECT, teacher: t });
+const train = (time, t) => ({ time, kind: 'training', label: TRAIN, teacher: t });
+
+const denseDay = {
+  title: 'حلقات الأربعاء',
+  subtitle: '👁️ توقيت العرض: القاهرة (+2)',
+  slots: [
+    review('ملكة أحمد'), review('لمياء سعد'), review('اسراء عبد الناصر'), review('حسناء الغريب'),
+    review('أروى محمد'), review('هيام فرج'), review('منى محمود'),
+    train('10:00', 'أ.إسراء سمير'),
+    train('14:00', 'أ.ريهام محمد عبد الله'),
+    train('17:00', 'أ.بدرية مصطفى أحمد'),
+    train('18:00', 'أ.ياسمين عشري'),
+    train('18:00', 'أ.أسماء معوض حمودة'),
+    mainSlot('19:00', 'أ.نهى عيد'),
+  ],
+  footer: 'دائرة دين — نسأل الله التوفيق والسداد',
+};
+
+const denseTeacher = {
+  title: 'جدول أ.منال رجب',
+  subtitle: '👁️ توقيت العرض: القاهرة (+2)',
+  days: [
+    { day: 'السبت', slots: [correct('20:00', 'أ.منال رجب')] },
+    { day: 'الثلاثاء', slots: [review('أ.منال رجب'), train('12:00', 'أ.منال رجب')] },
+    { day: 'الجمعة', slots: [train('10:00', 'أ.منال رجب'), correct('15:00', 'أ.منال رجب')] },
+  ],
+  footer: 'دائرة دين — نسأل الله التوفيق والسداد',
+};
+
+test('dayRosterHtml renders every slot of a dense day', () => {
+  const html = dayRosterHtml(denseDay);
+  for (const needle of [
+    'ملكة أحمد', 'لمياء سعد', 'اسراء عبد الناصر', 'حسناء الغريب', 'أروى محمد', 'هيام فرج', 'منى محمود',
+    '10:00', '14:00', '17:00', '18:00', '19:00',
+    'أ.إسراء سمير', 'أ.ريهام محمد عبد الله', 'أ.بدرية مصطفى أحمد', 'أ.ياسمين عشري', 'أ.أسماء معوض حمودة', 'أ.نهى عيد',
+  ]) {
+    assert.ok(html.includes(needle), `expected dense day roster to include "${needle}"`);
+  }
+});
+
+test('teacherRosterHtml renders every day of a dense teacher schedule', () => {
+  const html = teacherRosterHtml(denseTeacher);
+  // Slots with a `kind` render the kind's short pill label, not the raw label.
+  for (const needle of ['السبت', 'الثلاثاء', 'الجمعة', '20:00', '12:00', '10:00', '15:00', 'تصحيح التلاوة', 'مراجعة التكاليف', 'تدريب']) {
+    assert.ok(html.includes(needle), `expected dense teacher roster to include "${needle}"`);
+  }
+});
+
+test('renderHtmlToPng produces valid PNGs from the dense day and teacher rosters', { skip: !hasChrome }, async () => {
+  for (const [html, width] of [[dayRosterHtml(denseDay), LIST_WIDTH], [teacherRosterHtml(denseTeacher), LIST_WIDTH]]) {
+    const png = await renderHtmlToPng(html, { width, scale: 1 });
+    assert.ok(Buffer.isBuffer(png));
+    assert.ok(png.length > 1000, 'expected a non-trivial PNG');
+    assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  }
+});
+
 after(async () => {
   await closeBrowser();
 });
