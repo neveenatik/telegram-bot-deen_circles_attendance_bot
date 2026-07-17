@@ -24,8 +24,10 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@supabase/supabase-js": "^2.108.2",
     "dotenv": "^17.4.2",
+    "puppeteer-core": "^25.3.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
