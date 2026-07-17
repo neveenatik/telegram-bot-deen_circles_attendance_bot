@@ -5,6 +5,7 @@ import { createHandlers } from '../lib/handlers/actions/text.js';
 import { archivedSessionKey } from '../lib/historyUtils.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 import { TEXT } from '../lib/text.js';
+import * as participants from '../lib/sessionParticipants.js';
 
 test('onText: a command message passes through to the next middleware', async () => {
   const { onText } = createHandlers({ storage: makeStorage(), telegram: makeTelegram() });
@@ -59,6 +60,65 @@ test('onText: historyEditVerse writes the verse to the archived session and refr
   assert.equal(saved[0].participants['بكر'].verse, 'آل عمران 10-15');
   assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the editor message');
 });
+
+test('onText: offline historyEditVerse refresh keeps verse-list tokens in roster order', async () => {
+  // Regression: offline classes order students by roster list number, but the
+  // force-reply refresh used to rebuild the nav without that order — so the
+  // refreshed buttons encoded alphabetical indices while taps resolved against
+  // list-number order, hitting the wrong student on the next pick.
+  const session = {
+    type: 'registeredSecondary',
+    seriesId: 2,
+    name: 'تصحيح',
+    startedAt: '2026-07-11T13:00:00.000Z',
+    endedAt: '2026-07-11T15:00:00.000Z',
+    participants: {
+      // Alphabetical order (آية < مريم) differs from list-number order (مريم=1, آية=2).
+      'مريم': { name: 'مريم', memberId: 'offline:u1', listNumber: 1, status: 'present', called: null, verse: null },
+      'آية': { name: 'آية', memberId: 'offline:u2', listNumber: 2, status: 'present', called: null, verse: null },
+    },
+  };
+  const pending = {
+    action: 'historyEditVerse', groupId: 'offline:abc', chatId: 123, msgId: 555,
+    ns: 'o', gref: '5',
+    series: 2, recordIndex: 1, recordKey: archivedSessionKey(session), token: 'g0', verseListPage: 0,
+    memberName: 'مريم', sessionType: 'registeredSecondary', promptMsgId: 556, awaitingPrompt: false,
+  };
+  const storage = makeStorage({
+    getReplyPrompt: async () => pending,
+    delReplyPrompt: async () => {},
+    getSessions: async () => [session],
+    saveSessions: async () => {},
+  });
+  const telegram = makeTelegram();
+  const { onText } = createHandlers({ storage, telegram });
+  const { ctx } = makeCtx({ text: '5-9' });
+  ctx.message.reply_to_message = { message_id: 556 };
+
+  await onText(ctx, async () => {});
+
+  assert.equal(telegram.calls.editMessageText.length, 1, 'refreshes the verse list');
+  const extra = telegram.calls.editMessageText[0][4];
+  const rows = extra.reply_markup.inline_keyboard;
+  const order = participants.namesByListNumber(session);
+
+  // Every rendered member button's token must resolve (against roster order) back
+  // to the student named on that button.
+  let checked = 0;
+  for (const row of rows) {
+    for (const btn of row) {
+      const parts = btn.callback_data.split(':');
+      if (parts[1] !== 'everse') continue;
+      const token = parts[5];
+      const resolved = participants.resolveToken(session, order, token);
+      assert.ok(resolved, `token ${token} resolves`);
+      assert.ok(btn.text.includes(resolved.name), `button "${btn.text}" matches resolved "${resolved.name}"`);
+      checked += 1;
+    }
+  }
+  assert.equal(checked, 2, 'both present members rendered as buttons');
+});
+
 
 test('onText: historyEditTitle renames the archived session and refreshes the editor', async () => {
   const session = {
