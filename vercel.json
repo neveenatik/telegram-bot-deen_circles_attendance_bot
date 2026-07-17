@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/telegram.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "assets/fonts/**"
     }
   },
   "redirects": [

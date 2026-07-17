@@ -433,6 +433,57 @@ test('week: groups slots by weekday with day headers', async () => {
   assert.match(text, /17:30/);
 });
 
+// ── Share as image ───────────────────────────────────────────────────────────
+
+test('week: offers a share button when there are slots', async () => {
+  const store = ttStorage({ listScheduleSlots: async () => SLOTS });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(store).week(ctx);
+  assert.ok(editData(calls).includes('o:ttshare:5'));
+});
+
+test('week: hides the share button when the schedule is empty', async () => {
+  const store = ttStorage({ listScheduleSlots: async () => [] });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttweek:5', '5'] });
+  await handlers(store).week(ctx);
+  assert.ok(!editData(calls).includes('o:ttshare:5'));
+});
+
+test('shareMenu: offers week, day and teacher image options', async () => {
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttshare:5', '5'] });
+  await handlers(ttStorage()).shareMenu(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:ttimg:5'));
+  assert.ok(data.includes('o:ttimgd:5'));
+  assert.ok(data.includes('o:ttimgt:5'));
+});
+
+test('shareDayPicker: lists only days that have sessions', async () => {
+  const store = ttStorage({ listScheduleSlots: async () => SLOTS });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttimgd:5', '5'] });
+  await handlers(store).shareDayPicker(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:ttimgdx:5:0')); // الأحد has a slot
+  assert.ok(data.includes('o:ttimgdx:5:2')); // الثلاثاء has a slot
+  assert.ok(!data.includes('o:ttimgdx:5:1')); // الإثنين has none
+});
+
+test('shareTeacherPicker: lists only teachers assigned to slots', async () => {
+  const store = ttStorage({ listScheduleSlots: async () => SLOTS });
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttimgt:5', '5'] });
+  await handlers(store).shareTeacherPicker(ctx);
+  const data = editData(calls);
+  assert.ok(data.includes('o:ttimgtx:5:7')); // أمل (teacherId 7)
+  assert.equal(data.filter((d) => d.startsWith('o:ttimgtx:')).length, 1); // the null-teacher slot is excluded
+});
+
+test('shareTeacherPicker: shows a notice when no teacher is assigned', async () => {
+  const store = ttStorage({ listScheduleSlots: async () => [SLOTS[1]] }); // only the teacher-less slot
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:ttimgt:5', '5'] });
+  await handlers(store).shareTeacherPicker(ctx);
+  assert.match(calls.editMessageText[0][0], /لا توجد معلمات/);
+});
+
 test('myWeek: aggregates every class the user manages', async () => {
   const store = ttStorage({
     listScheduleForUser: async () => [

@@ -15,6 +15,20 @@ import { TEXT } from '../../text.js';
 import { beginForceReplyAwaiting, replyEphemeral, logTelegramError } from '../../helpers.js';
 import { clampButtonLabel } from '../../historyUtils.js';
 import { SESSION_TYPES } from '../../sessionTypes.js';
+import {
+  weekRosterHtml,
+  dayRosterHtml,
+  teacherRosterHtml,
+  ROSTER_WIDTH,
+  LIST_WIDTH,
+} from '../../render/templates/weekRoster.js';
+import type {
+  RosterKind,
+  RosterSlot,
+  RosterDay,
+  DayRosterData,
+  TeacherRosterData,
+} from '../../render/templates/weekRoster.js';
 
 const TT = TEXT.timetable;
 
@@ -533,10 +547,166 @@ function weekView(cls: ManageableClass, slots: Slot[], classTz: string, prefs: U
   const body = slots.length ? weekBody(slots, classTz, viewTz, prefs.weekStart) : TT.weekEmpty;
   const rows = [
     ...viewPrefsRows('c', g),
+    ...(slots.length ? [[Markup.button.callback(TT.shareButton, `o:ttshare:${g}`)]] : []),
     [Markup.button.callback(TEXT.backButton, `o:tt:${g}`), ...dismissRow()],
   ];
   const header = `${TT.weekTitle(cls.name)}\n${TT.viewTzHeader(tzLabel(viewTz))}`;
   return { text: `${header}\n\n${body}`, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// ── Shareable-image roster data ──────────────────────────────────────────────
+// The templates (lib/render/templates/weekRoster) turn structured data into a
+// PNG. These builders convert schedule slots into that data in the viewer's
+// timezone (same conversion as the on-screen week), mapping each session type
+// to a colour-coded RosterKind. Session-type keys already match RosterKind
+// values; unknown types fall back to 'other'.
+const ROSTER_KINDS = new Set<string>([...SESSION_TYPES, 'homeworkReview']);
+
+function kindForType(type: string): RosterKind {
+  return (ROSTER_KINDS.has(type) ? type : 'other') as RosterKind;
+}
+
+// Convert a slot into the viewer's timezone, returning its shown day + time.
+function slotInView(s: Slot, classTz: string, viewTz: string): { day: number; time: string } {
+  if (isAllDaySlot(s.timeOfDay)) return { day: s.dayOfWeek, time: s.timeOfDay };
+  const c = convertSlot(s.dayOfWeek, s.timeOfDay, classTz, viewTz);
+  return { day: c.dayOfWeek, time: c.time };
+}
+
+// A slot rendered for the image: HH:MM (or the all-day label), the full Arabic
+// type title for fallback, the linked teacher, and the colour-coding kind.
+function toRosterSlot(s: Slot, time: string): RosterSlot {
+  return {
+    time: isAllDaySlot(time) ? TT.allDayLabel : time,
+    label: typeLabel(s.sessionType),
+    teacher: s.teacherName ?? undefined,
+    kind: kindForType(s.sessionType),
+  };
+}
+
+function imageSubtitle(viewTz: string): string {
+  return TT.imageSubtitle(tzLabel(viewTz));
+}
+
+// Group all slots by day (viewer tz), ordered from the viewer's week-start.
+function buildWeekData(cls: ManageableClass, slots: Slot[], classTz: string, prefs: UserPrefs): {
+  title: string; subtitle: string; days: RosterDay[]; footer: string;
+} {
+  const viewTz = effectiveViewTz(prefs, classTz);
+  const byDay = new Map<number, RosterSlot[]>();
+  for (const s of slots) {
+    const { day, time } = slotInView(s, classTz, viewTz);
+    const list = byDay.get(day) ?? [];
+    list.push(toRosterSlot(s, time));
+    byDay.set(day, list);
+  }
+  const days: RosterDay[] = [];
+  for (const d of weekOrder(prefs.weekStart)) {
+    const list = byDay.get(d);
+    if (list && list.length) days.push({ day: dayLabel(d), slots: list });
+  }
+  return { title: cls.name, subtitle: imageSubtitle(viewTz), days, footer: TT.imageFooter };
+}
+
+// One day's sessions (viewer tz), ordered by the template.
+function buildDayData(cls: ManageableClass, slots: Slot[], classTz: string, prefs: UserPrefs, day: number): DayRosterData {
+  const viewTz = effectiveViewTz(prefs, classTz);
+  const daySlots: RosterSlot[] = [];
+  for (const s of slots) {
+    const view = slotInView(s, classTz, viewTz);
+    if (view.day === day) daySlots.push(toRosterSlot(s, view.time));
+  }
+  return {
+    title: TT.imageDayTitle(cls.name, dayLabel(day)),
+    subtitle: imageSubtitle(viewTz),
+    slots: daySlots,
+    footer: TT.imageFooter,
+  };
+}
+
+// One teacher's sessions across the week (viewer tz), grouped per day.
+function buildTeacherData(
+  cls: ManageableClass, slots: Slot[], classTz: string, prefs: UserPrefs, teacherId: number, teacherName: string,
+): TeacherRosterData {
+  const viewTz = effectiveViewTz(prefs, classTz);
+  const byDay = new Map<number, RosterSlot[]>();
+  for (const s of slots) {
+    if (s.teacherId !== teacherId) continue;
+    const { day, time } = slotInView(s, classTz, viewTz);
+    const list = byDay.get(day) ?? [];
+    list.push(toRosterSlot(s, time));
+    byDay.set(day, list);
+  }
+  const days: RosterDay[] = [];
+  for (const d of weekOrder(prefs.weekStart)) {
+    const list = byDay.get(d);
+    if (list && list.length) days.push({ day: dayLabel(d), slots: list });
+  }
+  return {
+    title: TT.imageTeacherTitle(cls.name, teacherName),
+    subtitle: imageSubtitle(viewTz),
+    days,
+    footer: TT.imageFooter,
+  };
+}
+
+// Distinct days that have at least one session, in the viewer's timezone.
+function daysWithSlots(slots: Slot[], classTz: string, viewTz: string): Set<number> {
+  const set = new Set<number>();
+  for (const s of slots) set.add(slotInView(s, classTz, viewTz).day);
+  return set;
+}
+
+// Distinct teachers that appear in the schedule (only those with sessions).
+function teachersInSlots(slots: Slot[]): { id: number; name: string }[] {
+  const map = new Map<number, string>();
+  for (const s of slots) {
+    if (s.teacherId != null && s.teacherName) map.set(s.teacherId, s.teacherName);
+  }
+  return [...map].map(([id, name]) => ({ id, name }));
+}
+
+// The "share as image" menu: pick the whole week, a day, or a teacher.
+function shareMenuView(cls: ManageableClass) {
+  const g = cls.rowId;
+  const rows = [
+    [Markup.button.callback(TT.shareWeekButton, `o:ttimg:${g}`)],
+    [Markup.button.callback(TT.shareDayButton, `o:ttimgd:${g}`)],
+    [Markup.button.callback(TT.shareTeacherButton, `o:ttimgt:${g}`)],
+    [Markup.button.callback(TEXT.backButton, `o:ttweek:${g}`), ...dismissRow()],
+  ];
+  return { text: TT.shareMenuTitle, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Day picker for the day image: only days that actually have sessions.
+function shareDayPickerView(cls: ManageableClass, present: Set<number>, weekStart: number) {
+  const g = cls.rowId;
+  const days = weekOrder(weekStart).filter((d) => present.has(d));
+  const rows = [];
+  for (let i = 0; i < days.length; i += 2) {
+    const a = days[i];
+    if (a === undefined) continue;
+    const row = [Markup.button.callback(dayLabel(a), `o:ttimgdx:${g}:${a}`)];
+    const b = days[i + 1];
+    if (b !== undefined) row.push(Markup.button.callback(dayLabel(b), `o:ttimgdx:${g}:${b}`));
+    rows.push(row);
+  }
+  rows.push([Markup.button.callback(TEXT.backButton, `o:ttshare:${g}`), ...dismissRow()]);
+  return { text: TT.sharePickDay, keyboard: Markup.inlineKeyboard(rows) };
+}
+
+// Teacher picker for the teacher image.
+function shareTeacherPickerView(cls: ManageableClass, teachers: { id: number; name: string }[]) {
+  const g = cls.rowId;
+  if (!teachers.length) {
+    return {
+      text: TT.shareNoTeachers,
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback(TEXT.backButton, `o:ttshare:${g}`), ...dismissRow()]]),
+    };
+  }
+  const rows = teachers.map((t) => [Markup.button.callback(clampButtonLabel(t.name), `o:ttimgtx:${g}:${t.id}`)]);
+  rows.push([Markup.button.callback(TEXT.backButton, `o:ttshare:${g}`), ...dismissRow()]);
+  return { text: TT.sharePickTeacher, keyboard: Markup.inlineKeyboard(rows) };
 }
 
 // Cross-class "my week": group by day (converted to the viewer's timezone when
@@ -669,6 +839,99 @@ export function createHandlers({ storage }: { storage: Storage }) {
     const view = weekView(cls, slots, classTz, prefs);
     await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
     await ctx.answerCbQuery();
+  }
+
+  // ── Share as image ─────────────────────────────────────────────────────────
+  // Render a roster HTML template to a PNG and send it as a new photo message
+  // ("fire and go"): ack the tap immediately, post a transient notice, generate
+  // inline, send the photo, then clean up the notice. The heavy render engine
+  // (puppeteer) is imported lazily so it only loads when someone actually shares.
+  async function sendRosterImage(ctx: Context, html: string, width: number): Promise<void> {
+    const chatId = ctx.chat?.id;
+    if (chatId === undefined) { await ctx.answerCbQuery(); return; }
+    await ctx.answerCbQuery();
+    let noticeId: number | undefined;
+    try {
+      const notice = await ctx.reply(TT.imageGenerating);
+      noticeId = (notice as { message_id?: number }).message_id;
+    } catch { /* notice is best-effort */ }
+    try {
+      const { renderHtmlToPng } = await import('../../render/engine.js');
+      const png = await renderHtmlToPng(html, { width });
+      await ctx.telegram.sendPhoto(chatId, { source: png });
+    } catch (err) {
+      logTelegramError('timetable.share', err, { chatId: String(chatId) });
+      await replyEphemeral(ctx, TT.imageFailed);
+    } finally {
+      if (noticeId !== undefined) {
+        try { await ctx.telegram.deleteMessage(chatId, noticeId); } catch { /* already gone */ }
+      }
+    }
+  }
+
+  async function shareMenu(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const view = shareMenuView(cls);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function shareWeekImage(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const slots = await listScheduleSlots(cls.groupId);
+    const classTz = await getClassTimezone(cls.groupId);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const data = buildWeekData(cls, slots, classTz, prefs);
+    await sendRosterImage(ctx, weekRosterHtml(data), ROSTER_WIDTH);
+  }
+
+  async function shareDayPicker(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const slots = await listScheduleSlots(cls.groupId);
+    const classTz = await getClassTimezone(cls.groupId);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const present = daysWithSlots(slots, classTz, effectiveViewTz(prefs, classTz));
+    const view = shareDayPickerView(cls, present, prefs.weekStart);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function shareDayImage(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const day = Number(readMatch(ctx)[2] ?? NaN);
+    if (!Number.isInteger(day) || day < 0 || day > 6) { await ctx.answerCbQuery(TT.missing); return; }
+    const slots = await listScheduleSlots(cls.groupId);
+    const classTz = await getClassTimezone(cls.groupId);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const data = buildDayData(cls, slots, classTz, prefs, day);
+    await sendRosterImage(ctx, dayRosterHtml(data), LIST_WIDTH);
+  }
+
+  async function shareTeacherPicker(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const slots = await listScheduleSlots(cls.groupId);
+    const view = shareTeacherPickerView(cls, teachersInSlots(slots));
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function shareTeacherImage(ctx: Context): Promise<void> {
+    const cls = await resolve(ctx);
+    if (!cls) { await ctx.answerCbQuery(TEXT.adminOnly); return; }
+    const teacherId = Number(readMatch(ctx)[2] ?? NaN);
+    if (!Number.isInteger(teacherId)) { await ctx.answerCbQuery(TT.missing); return; }
+    const slots = await listScheduleSlots(cls.groupId);
+    const teacher = teachersInSlots(slots).find((t) => t.id === teacherId);
+    if (!teacher) { await ctx.answerCbQuery(TT.missing); return; }
+    const classTz = await getClassTimezone(cls.groupId);
+    const prefs = await getUserPrefs(ctx.from?.id ?? '');
+    const data = buildTeacherData(cls, slots, classTz, prefs, teacherId, teacher.name);
+    await sendRosterImage(ctx, teacherRosterHtml(data), LIST_WIDTH);
   }
 
   // ── Per-viewer display preferences (view timezone + week start) ────────────
@@ -1137,6 +1400,12 @@ export function createHandlers({ storage }: { storage: Storage }) {
   return {
     panel,
     week,
+    shareMenu,
+    shareWeekImage,
+    shareDayPicker,
+    shareDayImage,
+    shareTeacherPicker,
+    shareTeacherImage,
     tzPicker,
     tzApply,
     tzRegions,
@@ -1172,6 +1441,12 @@ export function register(bot: BotLike, storage: Storage): void {
   bot.command('myweek', h.myWeek);
   bot.action(/^o:tt:(\d+)$/, h.panel);
   bot.action(/^o:ttweek:(\d+)$/, h.week);
+  bot.action(/^o:ttshare:(\d+)$/, h.shareMenu);
+  bot.action(/^o:ttimg:(\d+)$/, h.shareWeekImage);
+  bot.action(/^o:ttimgd:(\d+)$/, h.shareDayPicker);
+  bot.action(/^o:ttimgdx:(\d+):([0-6])$/, h.shareDayImage);
+  bot.action(/^o:ttimgt:(\d+)$/, h.shareTeacherPicker);
+  bot.action(/^o:ttimgtx:(\d+):(\d+)$/, h.shareTeacherImage);
   bot.action(/^o:tttz:(\d+)$/, h.tzPicker);
   bot.action(/^o:tttzx:(\d+):([A-Za-z0-9_+\-/]+)$/, h.tzApply);
   bot.action(/^o:tzr:(\d+)$/, h.tzRegions);
