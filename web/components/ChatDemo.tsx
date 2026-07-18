@@ -386,8 +386,10 @@ export default function ChatDemo() {
               </>
             )}
 
-            {/* 3. The bot auto-pings the group with a data-free nudge */}
-            {!inDm && showNudge && (
+            {/* 3. The bot auto-pings the group with a data-free nudge. It is
+                removed once the pending walk-in is handled (queue empty),
+                mirroring the real bot deleting the group ping. */}
+            {!inDm && showNudge && !guestApproved && (
               <div className="flex justify-start msg-in">
                 <div className="tg-in w-full max-w-[92%] rounded-2xl rounded-bl-md shadow-sm">
                   <div className="px-3 pt-2">
