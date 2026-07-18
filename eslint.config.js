@@ -9,7 +9,7 @@ const telegrafPlugin = {
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**'],
+    ignores: ['node_modules/**', 'web/**'],
   },
   {
     files: ['**/*.js'],
