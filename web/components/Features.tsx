@@ -7,6 +7,7 @@ const ITEMS = [
   { key: "offline", icon: "🔒" },
   { key: "roster", icon: "🗓️" },
   { key: "materials", icon: "📚" },
+  { key: "homework", icon: "✍️" },
   { key: "reports", icon: "📊" },
   { key: "privacy", icon: "🛡️" },
 ] as const;

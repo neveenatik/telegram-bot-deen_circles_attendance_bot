@@ -42,8 +42,12 @@
         "desc": "Organise class days and teachers, and share the schedule as a polished image."
       },
       "materials": {
-        "title": "Materials & homework",
-        "desc": "Attach the lesson and homework to each session and track who has completed it."
+        "title": "Teaching materials",
+        "desc": "Upload lesson files — documents, photos, videos or audio — and re-share them with the class on demand; the bot keeps them ready to resend anytime."
+      },
+      "homework": {
+        "title": "Homework tracking",
+        "desc": "Assign homework and follow who has completed it, so no student's work slips through the cracks."
       },
       "reports": {
         "title": "History & reports",
