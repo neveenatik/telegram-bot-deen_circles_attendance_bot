@@ -1,0 +1,131 @@
+name: Agent dispatch
+
+# Option B funnel. Two lanes, checked in order:
+#   1. PLANNER — any open, unassigned issue labelled `needs-breakdown` is handed
+#      to the agent to DECOMPOSE (not build). It appends a sized breakdown to the
+#      `feature-ideas` funnel; you merge that plan, then the seeder script turns
+#      the new leaf tasks into small builder issues.
+#   2. BUILDER — otherwise, pick the highest-priority `ready` + `agent-ok` issue
+#      and assign it to the agent, which implements it on a branch and opens a PR.
+#
+# SETUP (one time):
+#   1. Create the labels:  bash scripts/gh/setup-agent-labels.sh
+#   2. Add a repo secret  COPILOT_ASSIGN_TOKEN  = a *user* PAT that can assign
+#      Copilot. Fine-grained PAT needs: Read metadata; Read/Write actions,
+#      contents, issues, pull requests. (The default GITHUB_TOKEN cannot trigger
+#      the agent — it must be a user token.)
+#   3. To enable the daily schedule, add a repo variable
+#      AGENT_DISPATCH_ENABLED = true. Until then, only manual runs work.
+#
+# Manual runs default to DRY RUN (chooses an issue but does not assign it).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Choose an issue but do not assign it"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "0 7 * * 1-5" # weekdays 07:00 UTC (opt-in via AGENT_DISPATCH_ENABLED)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard scheduled runs (opt-in)
+        id: guard
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" && "${{ vars.AGENT_DISPATCH_ENABLED }}" != "true" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Scheduled dispatch disabled. Set repo variable AGENT_DISPATCH_ENABLED=true to enable."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pick and assign the next issue
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+          REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+          MAX_CONCURRENT: "1"
+          FUNNEL_FILE: "feature-ideas"
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          BOT="copilot-swe-agent[bot]"
+
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::COPILOT_ASSIGN_TOKEN is not set. See the setup notes in this workflow file."
+            exit 1
+          fi
+
+          # Respect a concurrency cap: how many issues is the agent already on?
+          inflight=$(gh issue list --repo "$REPO" --state open --assignee "$BOT" --json number --jq 'length')
+          echo "Agent in-flight issues: $inflight (max $MAX_CONCURRENT)"
+          if (( inflight >= MAX_CONCURRENT )); then
+            echo "At capacity — nothing to dispatch."
+            exit 0
+          fi
+
+          # LANE 1 — planner: an oversized issue must be decomposed before it can
+          # be built. The agent produces a plan (not code), which the seeder later
+          # turns into small builder issues.
+          issue=""
+          mode=""
+          issue=$(gh issue list --repo "$REPO" --state open \
+            --label needs-breakdown \
+            --search "no:assignee sort:created-asc" \
+            --json number --jq '.[0].number // empty')
+          if [[ -n "$issue" ]]; then
+            mode="planner"
+            echo "Selected needs-breakdown issue #$issue (planner lane)"
+          else
+            # LANE 2 — builder: highest priority first, then oldest. Must be
+            # ready + agent-ok + unassigned.
+            for p in P0 P1 P2; do
+              issue=$(gh issue list --repo "$REPO" --state open \
+                --label ready --label agent-ok --label "priority:$p" \
+                --search "no:assignee sort:created-asc" \
+                --json number --jq '.[0].number // empty')
+              [[ -n "$issue" ]] && { mode="builder"; echo "Selected priority:$p issue #$issue (builder lane)"; break; }
+            done
+          fi
+
+          if [[ -z "$issue" ]]; then
+            echo "Nothing to dispatch (no needs-breakdown, and no ready/agent-ok/unassigned issues)."
+            exit 0
+          fi
+
+          # Custom instructions steer the agent per lane. Kept as single lines to
+          # avoid any YAML/bash multiline surprises.
+          PLANNER_INSTR="You are acting as a PLANNER — do NOT implement application code. Analyse this issue's scope and break it into 3-8 sub-tasks that are each independently shippable in a single small pull request (the coding agent has a ~59 minute session cap, so keep each task well under that). Append the plan to the funnel file '${FUNNEL_FILE}' as a new '## <short epic name>' section, followed by one '- [ ]' leaf per sub-task; each leaf is a single line describing the change plus the key file(s) it touches. Prefer additive, backward-compatible steps and a sensible build order. Your PR must only edit '${FUNNEL_FILE}' (plus docs if needed) — no code changes. In the PR description, summarise the breakdown and reference this issue so a maintainer can close it after merging the plan."
+          BUILDER_INSTR="Implement exactly what this issue's acceptance criteria describe, in ONE pull request. Follow AGENTS.md conventions and make the change lint-, typecheck- and test-clean (npm run lint && npm run typecheck && npm test). Keep the change small and focused. If the work turns out to be larger than a single ~59 minute session / one reviewable PR, implement the smallest coherent slice that delivers value and list the remaining follow-ups as a checklist in the PR description instead of expanding scope."
+
+          if [[ "$mode" == "planner" ]]; then INSTR="$PLANNER_INSTR"; else INSTR="$BUILDER_INSTR"; fi
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "DRY RUN — would assign #$issue to the agent in '$mode' mode:"
+            gh issue view "$issue" --repo "$REPO" --json number,title,labels \
+              --jq '"#\(.number) \(.title)  [\(.labels|map(.name)|join(", "))]"'
+            echo "instructions: $INSTR"
+            exit 0
+          fi
+
+          jq -n --arg repo "$REPO" --arg base "$BASE_BRANCH" --arg instr "$INSTR" \
+            '{assignees: ["copilot-swe-agent[bot]"], agent_assignment: {target_repo: $repo, base_branch: $base, custom_instructions: $instr}}' \
+            | gh api --method POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "/repos/$REPO/issues/$issue/assignees" \
+                --input -
+
+          echo "Assigned #$issue to $BOT ($mode lane)."
