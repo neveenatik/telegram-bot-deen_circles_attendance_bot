@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f8fb;
+  --foreground: #0a192f;
+  --brand: #0a192f;
+  --brand-2: #d4af37;
+  --card: #ffffff;
+  --muted: #5a687d;
+  --border: #dfe4ec;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --font-sans: var(--font-cairo);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a1424;
+    --foreground: #eef2f8;
+    --card: #12233d;
+    --muted: #9fb0c6;
+    --border: #223752;
+  }
+}
+
+/* ── Telegram chat theme (used by the live demo) ─────────────────────── */
+:root {
+  --tg-wall: #d3dfec;
+  --tg-in: #ffffff;
+  --tg-in-text: #1a1a1a;
+  --tg-out: #effdde;
+  --tg-out-text: #1a1a1a;
+  --tg-btn: rgba(255, 255, 255, 0.72);
+  --tg-btn-hover: rgba(255, 255, 255, 0.95);
+  --tg-btn-text: #3390ec;
+  --tg-time: #62809a;
+  --tg-tick: #4fae4e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-wall: #0e1621;
+    --tg-in: #182533;
+    --tg-in-text: #eef2f8;
+    --tg-out: #2b5278;
+    --tg-out-text: #eef2f8;
+    --tg-btn: rgba(24, 37, 51, 0.72);
+    --tg-btn-hover: rgba(33, 51, 71, 0.95);
+    --tg-btn-text: #6ab3f3;
+    --tg-time: #7ea0bf;
+    --tg-tick: #6ab3f3;
+  }
+}
+
+/* Soft Telegram-style wallpaper (subtle tinted blobs over a base tint). */
+.tg-chat {
+  background-color: var(--tg-wall);
+  background-image:
+    radial-gradient(circle at 15% 12%, rgba(255, 255, 255, 0.28), transparent 42%),
+    radial-gradient(circle at 85% 78%, rgba(255, 255, 255, 0.2), transparent 40%),
+    radial-gradient(circle at 60% 30%, rgba(140, 170, 205, 0.18), transparent 45%);
+}
+
+.tg-in {
+  background: var(--tg-in);
+  color: var(--tg-in-text);
+}
+
+.tg-out {
+  background: var(--tg-out);
+  color: var(--tg-out-text);
+}
+
+/* Telegram inline-keyboard button: flat, translucent, centered accent text. */
+.tg-btn {
+  background: var(--tg-btn);
+  color: var(--tg-btn-text);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.tg-btn:hover {
+  background: var(--tg-btn-hover);
+}
+
+.tg-btn-active {
+  background: var(--tg-btn-hover);
+  transform: scale(0.98);
+  box-shadow: inset 0 0 0 1.5px var(--brand-2);
+}
+
+.tg-time {
+  color: var(--tg-time);
+}
+
+.tg-tick {
+  color: var(--tg-tick);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-cairo), Arial, Helvetica, sans-serif;
+}
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, #0a192f, #1b3a66);
+}
+
+.brand-text {
+  background-image: linear-gradient(135deg, #0a192f, #c79a2e);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes msg-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.msg-in {
+  animation: msg-in 0.35s ease both;
+}
+
+.msg-out {
+  animation: msg-out 0.4s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-in,
+  .msg-out {
+    animation: none;
+  }
+}

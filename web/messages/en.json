@@ -1,0 +1,157 @@
+{
+  "meta": {
+    "title": "Islamic Study Circle Attendance Bot",
+    "description": "A Telegram bot that tracks attendance for Islamic study, memorisation and recitation circles — both live groups and private offline classes."
+  },
+  "nav": {
+    "features": "Features",
+    "guide": "How it works",
+    "demo": "Live demo",
+    "developers": "Developers",
+    "openBot": "Open the bot"
+  },
+  "hero": {
+    "badge": "For Islamic study, memorisation & recitation circles",
+    "title": "Organised attendance for your circle — no paper, no hassle",
+    "subtitle": "An Arabic-first Telegram bot that records attendance for any study circle — live groups or private classes — manages the weekly schedule, materials and homework, and keeps everyone's privacy.",
+    "ctaPrimary": "Try the bot",
+    "ctaSecondary": "Watch a live demo"
+  },
+  "features": {
+    "title": "Everything a teacher needs in one place",
+    "subtitle": "Built around how study circles actually run.",
+    "items": {
+      "attendance": {
+        "title": "One-tap attendance",
+        "desc": "Mark who is present or absent right inside the Telegram group; the message updates itself."
+      },
+      "tagging": {
+        "title": "Guest & pending tags",
+        "desc": "Know at a glance who is a confirmed member and who is still awaiting approval, so no newcomer slips through and your roster stays clean."
+      },
+      "mentions": {
+        "title": "Tag students & teachers",
+        "desc": "Mention all students — or teachers by role — with one command to grab attention for an important announcement."
+      },
+      "offline": {
+        "title": "Private offline classes",
+        "desc": "Run a private class from your own chat — students never have to touch the bot."
+      },
+      "roster": {
+        "title": "Weekly schedule",
+        "desc": "Organise class days and teachers, and share the schedule as a polished image."
+      },
+      "materials": {
+        "title": "Materials & homework",
+        "desc": "Attach the lesson and homework to each session and track who has completed it."
+      },
+      "reports": {
+        "title": "History & reports",
+        "desc": "Review the attendance of past sessions and edit any session at any time."
+      },
+      "privacy": {
+        "title": "Privacy first",
+        "desc": "Data is stored securely and students are only visible to those with permission."
+      }
+    }
+  },
+  "guide": {
+    "title": "How to use the bot",
+    "subtitle": "Two ways to work: live circles inside a Telegram group, or private classes managed from your own chat where students never touch the bot.",
+    "online": {
+      "title": "Live circles (inside a group)",
+      "subtitle": "Students interact with the bot in the group.",
+      "steps": [
+        "Add the bot to your group.",
+        "Start an attendance list with one command.",
+        "View attendance history anytime.",
+        "Add teachers and view the weekly roster.",
+        "Link training groups to the main group.",
+        "Link a homework group to manage and review homework.",
+        "Track student progress across the main group and linked groups via student history.",
+        "Review past sessions and edit any class history."
+      ]
+    },
+    "offline": {
+      "title": "Private classes",
+      "subtitle": "Managed from your chat — students never touch the bot.",
+      "steps": [
+        "Create a class manually.",
+        "Add students to the class.",
+        "Add cooperators to help you manage it.",
+        "Add teachers and view the weekly roster.",
+        "Start sessions and record attendance.",
+        "Add homework and let students view and reply to it.",
+        "Track student progress in the class.",
+        "View and edit history anytime."
+      ]
+    }
+  },
+  "demo": {
+    "title": "See how the bot works",
+    "subtitle": "It all starts with a command from the teacher, and the registration widget appears. Students register with one tap, and unlisted visitors are recorded automatically — the bot then pings the teacher in the group to approve them via a private panel. Try the buttons yourself.",
+    "restart": "Restart",
+    "groupName": "Study Circle Group",
+    "groupMeta": "group · students interact here",
+    "botName": "Deen Circles Bot",
+    "botMeta": "bot · teacher's private chat",
+    "command": "/startlist Today's lesson",
+    "nudge": {
+      "text": "🔔 Join requests awaiting approval: 1",
+      "hint": "Tap the button to open the requests panel in our private chat.",
+      "button": "📝 Open registrations"
+    },
+    "dmLabel": "📩 In the teacher's private chat",
+    "guestTag": "pending",
+    "list": {
+      "header": "📋 Attendance — Today's lesson (1/1)"
+    },
+    "widget": {
+      "header": "📚 List: Today's lesson",
+      "listCount": "📄 List messages: 1",
+      "prompt": "Welcome — tap the option below to register your attendance:",
+      "total": "👥 Total",
+      "notRegistered": "⏳ Not registered",
+      "statuses": {
+        "present": "✅ Present",
+        "listening": "👂 Listening",
+        "excused": "🔔 Excused"
+      },
+      "admin": {
+        "refresh": "🔄 Refresh",
+        "edit": "✏️ Edit attendance",
+        "freeze": "⏸️ Freeze list",
+        "stop": "🛑 End session"
+      }
+    },
+    "approval": {
+      "header": "📝 Pending registrations (1):",
+      "page": "📄 Page 1/1",
+      "note": "The visitor's attendance was recorded automatically — approve to add them to the roster.",
+      "addTeacher": "👩‍🏫 Add as teacher",
+      "dismiss": "🗑️ Dismiss"
+    },
+    "roster": ["Ahmad", "Maryam", "Khalid"],
+    "guest": "Sara"
+  },
+  "developers": {
+    "title": "For developers",
+    "subtitle": "The project is open source — contributions are very welcome.",
+    "cards": {
+      "source": { "title": "Browse the code", "desc": "Explore the structure and conventions in the repo." },
+      "issue": { "title": "Report a bug", "desc": "Found something off? Open an issue and we'll fix it." },
+      "feature": { "title": "Request a feature", "desc": "Share your idea to improve the bot." },
+      "pr": { "title": "Open a pull request", "desc": "Send a PR — we review and welcome contributions." }
+    },
+    "viewOnGithub": "View on GitHub"
+  },
+  "footer": {
+    "tagline": "Made to serve knowledge circles.",
+    "rights": "All rights reserved."
+  },
+  "localeSwitcher": {
+    "label": "Language",
+    "ar": "العربية",
+    "en": "English"
+  }
+}
