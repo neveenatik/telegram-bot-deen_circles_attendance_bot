@@ -355,6 +355,7 @@ create table if not exists session_participants (
   verse text,
   attended_main boolean,
   backup boolean,
+  pending_approval boolean,
   notes jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
