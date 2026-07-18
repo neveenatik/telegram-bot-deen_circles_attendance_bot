@@ -1,0 +1,53 @@
+# feature funnel
+
+- homework tracking system:
+  - [x] a dedicated homework group that is linked to main group same as training groups
+  - [x] homework gets posted in that group this should be recognised by the bot.
+  - [x] students start sending replies this is also recognised as submitting homework by the bot.
+  - [x] teachers (new type homework teachers) will reply to students.
+  - [x] teachers reply should be tracked as reviewed homework by the bot.
+  - for offline mode:
+    - [x] enable student role of class management.
+    - [x] teacher can add homework in text, photo, and or voice.
+    - [x] a user with student role can see/hear homework
+    - [x] a user with student role can submit a homework
+    - [x] homework can be voice or text or photo.
+    - [x] teacher would be able to review homework from offline panel and reply to student.
+    - [x] student can see teacher reply and resubmit homework.
+    - in case students were not involved in offline mode (some students are not able to handle automated tasks):
+      - [x] operator/assistent should be able to create a list of submitted homework and mark reviewed homework, resubmitted homework per student
+    - [x] we should be able to print a report of submitted homework and reviewed homework, resubmitted homework.
+- teaching materials upload:
+  - [x] enable class admins/operators to upload teaching materials with a title.
+  - [x] render a panel for teaching material in class hub.
+  - [x] admins are able to send teaching materials to group in live mode or just retrieve it later in offline mode.
+  - [x] enable multiple files upload.
+  - [x] enable partial selection of lesson material
+- rooster:
+  - [x] allow to manage lesson rooster for each session type.
+  - [x] allow class level rooster view.
+  - rooster panel can:
+    - [x] add, remove, delete a session.
+    - [x] assign session teacher for a session.
+- scheduled actions:
+  - sessions have rooster.
+  - [ ] admins should be able to manage rooster add/remove/edit.
+  - [ ] admins should be able to schedule messages in relation to session timing.
+  - [ ] admins should be able to schedule message in relation to days.
+- upgrade FE interface to a small NEXTJS app with localisation support:
+  - currently our FE interface is a static HTML page served by telegram api get request.
+  - [ ] we can make it a nextJS app which uses locales to serve app in localised text as well as support country selector driven localisation.
+  - [ ] we want to have bot demo in FE app.
+  - [ ] we want to have playgroud where user can tryout bot.
+  - [ ] developers section renders README with link to github repo.
+- migrate to typescript using [plan](./docs/typescript-migration-plan.md)
+  - [x] start foundational setup.
+  - [x] start using typescript for new features.
+  - [ ] gradually migrate each feature
+- [x] extend offline sessions to any type.
+- [x] extend rooster to support any session type.
+- [ ] render rooster setting widget button instead of directly (week start and timezone) buttons in week view panel.
+- [ ] with new image engin we can generate nice reports not dull messages
+- [ ] enable deleting an offline class
+- [ ] enable bulk attendance status for offline class:
+  - [ ] owner/coordinator/assistant can provide a name list for a certain attendance status.

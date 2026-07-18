@@ -1,0 +1,67 @@
+name: Feature / task
+description: A scoped unit of work that can become one pull request
+title: "[feat]: "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep each issue **small enough for a single pull request**. The Copilot
+        cloud agent has a hard 59-minute session cap and opens one PR per task,
+        so split epics (e.g. "homework tracking system") into concrete tasks.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should change and why (one or two sentences).
+      placeholder: Add a `homework_teacher` role to offline class management.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, checkable outcomes. The agent uses these as the definition of done.
+      value: |
+        - [ ] 
+        - [ ] 
+        - [ ] Lint, typecheck and tests pass (`npm run lint && npm run typecheck && npm test`)
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Pointers
+      description: Relevant files, prior art, or gotchas (see AGENTS.md for conventions).
+      placeholder: |
+        - lib/handlers/actions/offline.js
+        - Follow the storage/text/handler conventions in AGENTS.md
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: Rough effort. Anything bigger than one PR should be marked `needs-breakdown` so the agent decomposes it first.
+      options:
+        - "Fits one PR"
+        - "Too big — needs breakdown"
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Sets the order the dispatcher assigns work. A maintainer confirms this during triage.
+      options:
+        - "priority:P0 (critical)"
+        - "priority:P1 (high)"
+        - "priority:P2 (normal)"
+      default: 2
+    validations:
+      required: true
+  - type: checkboxes
+    id: agent
+    attributes:
+      label: Agent readiness
+      options:
+        - label: This is scoped and unblocked (a maintainer will add `ready` + `agent-ok` when confirmed).
