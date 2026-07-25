@@ -51,3 +51,36 @@
 - [ ] enable deleting an offline class
 - [ ] enable bulk attendance status for offline class:
   - [ ] owner/coordinator/assistant can provide a name list for a certain attendance status.
+- rewarding / motivation system (keep students consistent in homework, training, recitation):
+  - goal: encourage consistency without shaming laggards; derive everything from
+    data the bot already records so students do nothing extra.
+  - data sources (already tracked, no new student input):
+    - `homework_submissions` → submitted / reviewed / resubmitted per member.
+    - `session_participants.attendance_status` (present/listening/excused/absent)
+      joined with `sessions.session_type` → attendance across main / training /
+      recitation.
+    - `member_progress` (pages/verse) → recitation progress per member.
+  - phase 1 — حسنات points (MVP):
+    - [ ] define a points config per action (homework submitted, homework
+      reviewed, resubmit-after-review bonus, attendance by status, recitation
+      pages) with higher weight for training + recitation (the slipping ones).
+    - [ ] add a scoring module that aggregates points per member per course cycle
+      from the existing tables (no schema change; pure read/aggregate).
+    - [ ] surface a "المواظبة" section: warm, collective framing
+      («الأكثر مواظبة هذا الأسبوع»), never shaming.
+  - phase 2 — positive nudges (reuse `lib/pendingNudge.js`):
+    - [ ] auto-congratulate completers in the homework group
+      («ما شاء الله، أتممتِ تكاليف الأسبوع»).
+    - [ ] gentle private reminder to those falling behind (opt-in / admin toggle).
+  - phase 3 — streaks & badges (personal progress, everyone can win):
+    - [ ] per-member streak counter (e.g. consecutive weeks with no missed
+      homework), resets on a miss.
+    - [ ] milestone badges/أوسمة (first homework reviewed, full month attendance,
+      recitation page target). needs a small `member_rewards` table (idempotent
+      migration + supabase_v2.sql update).
+  - phase 4 — tiers/levels (optional): map cumulative points to named tiers
+    (مجتهدة → متميّزة → متقنة) for long-term goals without direct ranking.
+  - phase 5 — image reports: render the weekly "المواظبة" summary via the render
+    engine (`lib/render/`) instead of plain text (ties into "generate nice reports").
+  - recommended start: phase 1 (points from existing data) + phase 2 (positive
+    nudges), shown as a weekly image summary.
