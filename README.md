@@ -4,6 +4,8 @@
 
 يدعم النشر على Vercel مع Supabase في الإنتاج.
 
+🌐 **الموقع التعريفي:** [deen-circles-web.vercel.app](https://deen-circles-web.vercel.app)
+
 ## المتطلبات
 
 - Node.js 22+
