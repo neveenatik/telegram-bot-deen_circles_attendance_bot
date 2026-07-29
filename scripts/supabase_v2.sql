@@ -535,11 +535,16 @@ for each row execute function assign_member_list_number();
 -- No anon/authenticated policies are defined here by design.
 alter table groups enable row level security;
 alter table group_settings enable row level security;
+alter table user_prefs enable row level security;
 alter table members enable row level security;
 alter table teachers enable row level security;
+alter table class_managers enable row level security;
 alter table class_materials enable row level security;
+alter table class_material_files enable row level security;
 alter table homework enable row level security;
+alter table homework_files enable row level security;
 alter table homework_submissions enable row level security;
+alter table class_schedule enable row level security;
 alter table pending_registrations enable row level security;
 alter table sessions enable row level security;
 alter table session_participants enable row level security;
