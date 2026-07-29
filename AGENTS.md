@@ -93,9 +93,17 @@ test/                        # node:test suites + test/mocks.js
 - Schema changes: add an idempotent migration under `scripts/migrations/` named
   `YYYYMMDD_NNN_short_description.sql`, guarded by a `schema_migrations` version
   row and `... if not exists`. Also update `scripts/supabase_v2.sql` (the fresh
-  install schema) to match. Migrations are applied **manually** (no migrate npm
-  script) and must run **before/with** the code deploy. Prefer additive,
-  backward-compatible changes (nullable columns) for zero-downtime.
+  install schema) to match. **Write every migration to be replay-safe** (guard
+  DDL with `if [not] exists` / `to_regclass(...)` checks, never assume a table
+  or column is in a particular state) — this is a hard requirement, not a
+  nicety. Prefer additive, backward-compatible changes (nullable columns) for
+  zero-downtime.
+- Migrations run in CI: the `migrate` job in `.github/workflows/ci.yml` applies
+  each `scripts/migrations/*.sql` **exactly once**, tracked in the
+  `schema_migrations` ledger (version = filename without `.sql`), then deploys.
+  New files auto-apply on the next push to `master`; already-recorded versions
+  are skipped. Fresh databases are built from `scripts/supabase_v2.sql`, not by
+  replaying this folder.
 
 ### TypeScript migration (in progress)
 - New handler files may be `.ts`; existing `.js` stays until migrated (see
@@ -125,8 +133,9 @@ test/                        # node:test suites + test/mocks.js
 ## Deploy checklist
 
 1. Lint + typecheck + tests green.
-2. Apply any new `scripts/migrations/*.sql` to production Supabase **first**
-   (additive migrations are safe to run ahead of the deploy).
-3. `git push` → Vercel auto-deploys `api/telegram.js`.
-4. Re-run `set-webhook` only if the deployment URL changed.
-5. Smoke-test the affected flow in Telegram.
+2. `git push` to `master` → CI runs, applies any new
+   `scripts/migrations/*.sql` (once, via the `schema_migrations` ledger),
+   then deploys to Vercel. Migrations run **before** the deploy job, so the
+   schema is in place first.
+3. Re-run `set-webhook` only if the deployment URL changed.
+4. Smoke-test the affected flow in Telegram.
