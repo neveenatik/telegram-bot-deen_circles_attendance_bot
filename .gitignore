@@ -1,4 +1,4 @@
 .env
 node_modules/
-scripts/tmp
-*/.DS_Store
+bot/scripts/tmp
+*/**/.DS_Store

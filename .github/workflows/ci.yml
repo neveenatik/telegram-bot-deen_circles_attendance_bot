@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bot
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +20,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+          cache-dependency-path: bot/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -67,7 +71,7 @@ jobs:
                applied_at timestamptz not null default now()
              );"
 
-          for f in scripts/migrations/*.sql; do
+          for f in bot/scripts/migrations/*.sql; do
             version=$(basename "$f" .sql)
             applied=$(psql "$SUPABASE_DB_URL" -tAc "select 1 from schema_migrations where version = '$version'")
             if [ "$applied" = "1" ]; then
