@@ -1137,6 +1137,22 @@ async function supabaseBackend() {
       }
       return { ok: true, name };
     },
+    deleteOfflineClass: async (groupId, ownerUserId) => {
+      const gid = normalizeGroupId(groupId);
+      const owner = String(ownerUserId || '').trim();
+      if (!owner) return { ok: false, reason: 'invalid' };
+      const { data, error } = await db
+        .from('groups')
+        .delete()
+        .eq('telegram_chat_id', gid)
+        .eq('owner_user_id', owner)
+        .not('owner_user_id', 'is', null)
+        .select('class_name')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return { ok: false, reason: 'not_found' };
+      return { ok: true, name: data.class_name || '' };
+    },
 
     // Copy a class the caller only helps manage (a shared class) into a brand-new
     // class she owns: same title (disambiguated if she already owns one by that

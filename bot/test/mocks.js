@@ -157,6 +157,7 @@ export function makeStorage(overrides = {}) {
     removeOfflineTrainingGroup: async () => ({ ok: true, name: 'مجموعة' }),
     setOfflineStudentTrainingGroup: async () => ({ ok: true, name: 'طالبة' }),
     cloneOfflineClass: async () => ({ ok: true, rowId: 99, groupId: 'offline:x', name: 'صف (نسخة)', students: 0, teachers: 0 }),
+    deleteOfflineClass: async () => ({ ok: true, name: 'صف' }),
     ...overrides,
   };
 }
