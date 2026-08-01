@@ -51,6 +51,7 @@ for (const t of tasks) {
   const body =
     `${context}From the feature funnel (\`${file}\`).\n\n` +
     `${t.text}\n\n` +
+    `<!-- funnel-task: ${t.text} -->\n\n` +
     '### Acceptance criteria\n- [ ] TODO — fill in before adding `ready`/`agent-ok`\n- [ ] Lint, typecheck and tests pass\n\n' +
     '### Scope\nKeep small enough for one PR (agent session cap is 59 min).';
 

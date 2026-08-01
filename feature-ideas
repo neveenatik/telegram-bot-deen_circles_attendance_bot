@@ -48,7 +48,7 @@
 - [x] extend rooster to support any session type.
 - [ ] render rooster setting widget button instead of directly (week start and timezone) buttons in week view panel.
 - [ ] with new image engin we can generate nice reports not dull messages
-- [ ] enable deleting an offline class
+- [x] enable deleting an offline class
 - [ ] enable bulk attendance status for offline class:
   - [ ] owner/coordinator/assistant can provide a name list for a certain attendance status.
 - rewarding / motivation system (keep students consistent in homework, training, recitation):
@@ -78,9 +78,9 @@
     - [ ] milestone badges/أوسمة (first homework reviewed, full month attendance,
       recitation page target). needs a small `member_rewards` table (idempotent
       migration + supabase_v2.sql update).
-  - phase 4 — tiers/levels (optional): map cumulative points to named tiers
+  - [ ] phase 4 — tiers/levels (optional): map cumulative points to named tiers
     (مجتهدة → متميّزة → متقنة) for long-term goals without direct ranking.
-  - phase 5 — image reports: render the weekly "المواظبة" summary via the render
+  - [ ] phase 5 — image reports: render the weekly "المواظبة" summary via the render
     engine (`lib/render/`) instead of plain text (ties into "generate nice reports").
   - recommended start: phase 1 (points from existing data) + phase 2 (positive
     nudges), shown as a weekly image summary.

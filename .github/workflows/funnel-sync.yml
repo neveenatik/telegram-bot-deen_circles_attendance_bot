@@ -1,0 +1,99 @@
+name: Funnel sync
+
+# Sync-back half of the feature funnel round-trip (see AGENTS.md). Flips a
+# `- [ ]` leaf in `feature-ideas` to `- [x]` when its work is done. Two triggers:
+#   * a merged PR that references the issue with a closing keyword (Closes #N) —
+#     the builder lane always does this, so we act the moment it merges;
+#   * an issue closed AS COMPLETED — covers manual closes (e.g. the planner lane,
+#     which a maintainer closes by hand after merging the plan).
+# Both paths run the same idempotent mark script, so any overlap is a no-op.
+#
+# Note: this pushes a small commit to the default branch. If branch protection
+# blocks the default GITHUB_TOKEN, swap in a user/app PAT on the steps below.
+
+on:
+  issues:
+    types: [closed]
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: funnel-sync
+  cancel-in-progress: false
+
+jobs:
+  mark-done:
+    if: >
+      (github.event_name == 'issues' && github.event.issue.state_reason == 'completed') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve issue number(s)
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "issues" ]]; then
+            numbers="$ISSUE_NUMBER"
+          else
+            # Issues the PR closes, e.g. "Closes #12" / "Fixes #7" / "Resolved #3".
+            numbers=$(printf '%s' "$PR_BODY" \
+              | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' \
+              | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
+          fi
+          echo "numbers=$numbers" >> "$GITHUB_OUTPUT"
+          echo "Resolved issue number(s): ${numbers:-<none>}"
+
+      - name: Mark matching funnel task(s) done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          NUMBERS: ${{ steps.resolve.outputs.numbers }}
+          # For the `issues` event the body/title are already in the payload.
+          PAYLOAD_TITLE: ${{ github.event.issue.title }}
+          PAYLOAD_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NUMBERS// /}" ]]; then
+            echo "No referenced issues; nothing to do."
+            exit 0
+          fi
+          for n in $NUMBERS; do
+            if [[ "$EVENT_NAME" == "issues" ]]; then
+              title="$PAYLOAD_TITLE"; body="$PAYLOAD_BODY"
+            else
+              title="$(gh issue view "$n" --repo "$REPO" --json title --jq '.title')"
+              body="$(gh issue view "$n" --repo "$REPO" --json body --jq '.body')"
+            fi
+            ISSUE_TITLE="$title" ISSUE_BODY="$body" \
+              node bot/scripts/mark-funnel-done.mjs --file feature-ideas
+          done
+
+      - name: Commit funnel update
+        env:
+          NUMBERS: ${{ steps.resolve.outputs.numbers }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- feature-ideas; then
+            echo "No funnel change to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feature-ideas
+          git commit -m "chore(funnel): mark task(s) done for #${NUMBERS// /, #}"
+          git push
