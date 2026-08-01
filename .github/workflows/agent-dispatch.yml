@@ -10,8 +10,8 @@ name: Agent dispatch
 #
 # SETUP (one time):
 #   1. Create the labels:  bash scripts/gh/setup-agent-labels.sh
-#   2. Add a repo secret  COPILOT_ASSIGN_TOKEN  = a *user* PAT that can assign
-#      Copilot. Fine-grained PAT needs: Read metadata; Read/Write actions,
+#   2. Add a repo secret  ACT_FOR_COPILOT_TOKEN  = a *user* PAT (acts as you) that
+#      can assign Copilot. Fine-grained PAT needs: Read metadata; Read/Write actions,
 #      contents, issues, pull requests. (The default GITHUB_TOKEN cannot trigger
 #      the agent — it must be a user token.)
 #   3. To enable the daily schedule, add a repo variable
@@ -53,7 +53,7 @@ jobs:
       - name: Pick and assign the next issue
         if: steps.guard.outputs.enabled == 'true'
         env:
-          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+          GH_TOKEN: ${{ secrets.ACT_FOR_COPILOT_TOKEN }}
           REPO: ${{ github.repository }}
           BASE_BRANCH: ${{ github.event.repository.default_branch }}
           MAX_CONCURRENT: "1"
@@ -64,7 +64,7 @@ jobs:
           BOT="copilot-swe-agent[bot]"
 
           if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "::error::COPILOT_ASSIGN_TOKEN is not set. See the setup notes in this workflow file."
+            echo "::error::ACT_FOR_COPILOT_TOKEN is not set. See the setup notes in this workflow file."
             exit 1
           fi
 
