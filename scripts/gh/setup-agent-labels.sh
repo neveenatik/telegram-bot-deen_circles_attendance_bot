@@ -9,6 +9,7 @@ gh label create "agent-ok"     --color "1d76db" --description "Approved for auto
 gh label create "priority:P0"  --color "b60205" --description "Critical / do first"                             --force
 gh label create "priority:P1"  --color "d93f0b" --description "High"                                            --force
 gh label create "priority:P2"  --color "fbca04" --description "Normal"                                          --force
-gh label create "needs-triage" --color "ededed" --description "Awaiting grooming"                               --forcegh label create "needs-breakdown" --color "5319e7" --description "Too big for one PR; agent should split it into sub-tasks first" --force
+gh label create "needs-triage" --color "ededed" --description "Awaiting grooming"                               --force
+gh label create "needs-breakdown" --color "5319e7" --description "Too big for one PR; agent should split it into sub-tasks first" --force
 gh label create "epic"         --color "c5def5" --description "A large body of work tracked as sub-tasks"          --force
 echo "Labels ready."
