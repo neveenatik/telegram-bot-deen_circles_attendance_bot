@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createHandlers } from '../lib/handlers/actions/offline.js';
+import { setPendingConfirm } from '../lib/confirmations.js';
 import { TEXT } from '../lib/text.js';
 import { makeCtx, makeStorage, makeTelegram } from './mocks.js';
 
@@ -346,6 +347,7 @@ test('classHome: owner sees rename + managers buttons', async () => {
   await classHome(ctx);
   const data = classHomeData(calls);
   assert.ok(data.includes('o:crename:5'));
+  assert.ok(data.includes('o:cdelete:5'));
   assert.ok(data.includes('o:mgrs:5'));
   assert.ok(data.includes('o:roster:5:0'));
 });
@@ -356,6 +358,7 @@ test('classHome: operator hides rename but shows managers + clone', async () => 
   await classHome(ctx);
   const data = classHomeData(calls);
   assert.ok(!data.includes('o:crename:5')); // renaming the class stays owner-only
+  assert.ok(!data.includes('o:cdelete:5')); // deleting the class stays owner-only
   assert.ok(data.includes('o:mgrs:5')); // operators manage assistants
   assert.ok(data.includes('o:clone:5')); // operators may clone a shared class
   assert.ok(data.includes('o:roster:5:0'));
@@ -374,7 +377,52 @@ test('classHome: assistant sees only sessions + report', async () => {
   assert.ok(!data.includes('o:teach:5'));
   assert.ok(!data.includes('o:newsess:5'));
   assert.ok(!data.includes('o:crename:5'));
+  assert.ok(!data.includes('o:cdelete:5'));
   assert.ok(!data.includes('o:mgrs:5'));
+});
+
+test('classDeleteConfirm: wires a tokenized confirm callback', async () => {
+  const { classDeleteConfirm } = handlers(offlineStorage());
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: ['o:cdelete:5', '5'] });
+  await classDeleteConfirm(ctx);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  const confirmCb = data.find((d) => /^o:cdeletex:[A-Z0-9]{6}$/.test(d));
+  assert.ok(confirmCb, 'has tokenized delete-confirm callback');
+});
+
+test('classDelete: owner delete removes class and returns to class list', async () => {
+  let deletedWith = null;
+  const store = offlineStorage({
+    deleteOfflineClass: async (groupId, ownerUserId) => {
+      deletedWith = { groupId, ownerUserId };
+      return { ok: true, name: 'صف الفجر' };
+    },
+    listOfflineClasses: async () => [{ groupId: 'offline:999:new', name: 'صف جديد', rowId: 6 }],
+  });
+  const token = setPendingConfirm(OWNER, {
+    action: 'offlineDeleteClass',
+    groupId: 'offline:999:abc',
+    ownerUserId: String(OWNER),
+    className: 'صف الفجر',
+  });
+  const { classDelete } = handlers(store);
+  const { ctx, calls } = makeCtx({ userId: OWNER, match: [`o:cdeletex:${token}`, token] });
+  await classDelete(ctx);
+
+  assert.deepEqual(deletedWith, { groupId: 'offline:999:abc', ownerUserId: String(OWNER) });
+  assert.match(calls.editMessageText[0][0], /تم حذف الصف/);
+  const data = calls.editMessageText[0][1].reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(data.includes('o:cls:6'));
+  assert.ok(!data.includes('o:cls:5'));
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.offline.classDeletedToast]]);
+});
+
+test('classDeleteConfirm: non-owner is rejected', async () => {
+  const { classDeleteConfirm } = handlers(withRole('operator'));
+  const { ctx, calls } = makeCtx({ userId: DELEGATE, match: ['o:cdelete:5', '5'] });
+  await classDeleteConfirm(ctx);
+  assert.deepEqual(calls.answerCbQuery, [[TEXT.adminOnly]]);
+  assert.equal(calls.editMessageText.length, 0);
 });
 
 test('roster: assistant is denied', async () => {

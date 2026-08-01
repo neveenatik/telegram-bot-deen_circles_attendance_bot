@@ -21,6 +21,7 @@ import { sessionsInSeries, archivedSessionKey, clampButtonLabel } from '../../hi
 import { registerOfflineEditor } from './history.js';
 import { SESSION_TYPES } from '../../sessionTypes.js';
 import * as participants from '../../sessionParticipants.js';
+import { setPendingConfirm, getPendingConfirm, deletePendingConfirm } from '../../confirmations.js';
 
 const OT = TEXT.offline;
 // Offline classes order students by their roster list number (not the alphabet)
@@ -121,6 +122,7 @@ export function renderClassHome(cls, role = 'owner') {
   rows.push([Markup.button.callback(OT.reportButton, `o:rep:${g}:1`)]);
   if (caps.manageClass) {
     rows.push([Markup.button.callback(OT.renameClassButton, `o:crename:${g}`)]);
+    rows.push([Markup.button.callback(OT.deleteClassButton, `o:cdelete:${g}`)]);
   }
   if (caps.manageClass || caps.manageAssistants) {
     rows.push([Markup.button.callback(OT.managersButton, `o:mgrs:${g}`)]);
@@ -132,6 +134,15 @@ export function renderClassHome(cls, role = 'owner') {
   const back = role === 'owner' ? 'o:mine' : 'o:shared';
   rows.push([Markup.button.callback(TEXT.backButton, back), ...dismissRow()]);
   return { text: OT.classHome(cls.name), keyboard: Markup.inlineKeyboard(rows) };
+}
+
+function renderClassDeleteConfirm(cls, token) {
+  const g = cls.rowId;
+  const rows = [
+    [Markup.button.callback(OT.confirmDeleteClassButton, `o:cdeletex:${token}`)],
+    [Markup.button.callback(TEXT.backButton, `o:cls:${g}`), ...dismissRow()],
+  ];
+  return { text: OT.deleteClassConfirm(cls.name), keyboard: Markup.inlineKeyboard(rows) };
 }
 
 export function renderRoster(cls, members, page = 0) {
@@ -579,6 +590,7 @@ export function createHandlers({ storage, telegram }) {
     setClassManagerRole,
     removeClassManager,
     touchClassManagerName,
+    deleteOfflineClass,
     setReplyPrompt,
     getClassTimezone,
   } = storage;
@@ -956,6 +968,49 @@ export function createHandlers({ storage, telegram }) {
       record: { action: 'offlineRenameClass', gref: rc.cls.rowId },
       sendPrompt: () => ctx.reply(OT.renamePrompt(rc.cls.name), { reply_markup: { force_reply: true } }),
     });
+  }
+
+  async function classDeleteConfirm(ctx) {
+    const rc = await resolveClass(ctx);
+    if (!rc.ok) return ctx.answerCbQuery(rc.reason);
+    if (denied(ctx, rc, 'manageClass')) return undefined;
+    const token = setPendingConfirm(ctx.from.id, {
+      action: 'offlineDeleteClass',
+      groupId: rc.cls.groupId,
+      ownerUserId: rc.cls.ownerUserId,
+      className: rc.cls.name,
+    });
+    const view = renderClassDeleteConfirm(rc.cls, token);
+    await ctx.editMessageText(view.text, { parse_mode: 'Markdown', ...view.keyboard });
+    await ctx.answerCbQuery();
+  }
+
+  async function classDelete(ctx) {
+    const token = ctx.match[1];
+    const pending = getPendingConfirm(token);
+    if (!pending || pending.action !== 'offlineDeleteClass') {
+      return ctx.answerCbQuery(TEXT.confirmNotFound);
+    }
+    if (pending.userId !== String(ctx.from.id)) {
+      return ctx.answerCbQuery(TEXT.confirmNotOwner);
+    }
+    if (pending.expiresAt < Date.now()) {
+      deletePendingConfirm(token);
+      return ctx.answerCbQuery(TEXT.confirmExpired);
+    }
+    deletePendingConfirm(token);
+    const res = await deleteOfflineClass(pending.groupId, pending.ownerUserId);
+    if (!res?.ok) {
+      if (res?.reason === 'not_found') return ctx.answerCbQuery(OT.notFound);
+      return ctx.answerCbQuery(OT.classDeleteFailed);
+    }
+    const classes = await listOfflineClasses(ctx.from.id);
+    const view = renderClassList(classes, { back: 'o:root' });
+    await ctx.editMessageText(`${OT.classDeleted(res.name || pending.className || '')}\n\n${view.text}`, {
+      parse_mode: 'Markdown',
+      ...view.keyboard,
+    });
+    return ctx.answerCbQuery(OT.classDeletedToast);
   }
 
   async function teachers(ctx) {
@@ -1447,6 +1502,8 @@ export function createHandlers({ storage, telegram }) {
     assignStudentTraining,
     unassignStudentTraining,
     renameClassPrompt,
+    classDeleteConfirm,
+    classDelete,
     teachers,
     teacherCategory,
     addTeacherPrompt,
@@ -1508,6 +1565,8 @@ export function register(bot, storage) {
   bot.action(/^o:sremove:(\d+):(\d+):(\d+)$/, h.removeStudentConfirmView);
   bot.action(/^o:sremx:(\d+):(\d+):(\d+)$/, h.removeStudent);
   bot.action(/^o:crename:(\d+)$/, h.renameClassPrompt);
+  bot.action(/^o:cdelete:(\d+)$/, h.classDeleteConfirm);
+  bot.action(/^o:cdeletex:([A-Z0-9]{6})$/, h.classDelete);
   // Training groups (offline): labels managed on the class home; ids are uuids.
   bot.action(/^o:tgs:(\d+)$/, h.trainingGroups);
   bot.action(/^o:tgadd:(\d+)$/, h.addTrainingGroupPrompt);
