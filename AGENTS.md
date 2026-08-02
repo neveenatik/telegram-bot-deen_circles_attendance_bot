@@ -60,8 +60,8 @@ issue), derive the target instead of guessing:
 
 1. **The backlog is the funnel + its issues.** `feature-ideas` holds the intent
    (nested/ordered leaves); each open GitHub issue mirrors one leaf via its
-   `funnel-task` marker. `gh issue list --state open` (JSON, piped to `cat` to
-   avoid the pager) is the fastest way to see what's live.
+   `funnel-task` marker. `gh issue list --state open --json number,title,labels`
+   (pipe to `cat` to skip the pager) is the fastest way to see what's live.
 2. **Labels tell you readiness, not just topic.** `ready` + `agent-ok` = groomed
    and buildable now; `needs-breakdown` = needs a plan first; `needs-triage` =
    ungroomed (its acceptance criteria are still a `TODO` placeholder). Build a
