@@ -6,9 +6,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        Keep each issue **small enough for a single pull request**. The Copilot
-        cloud agent has a hard 59-minute session cap and opens one PR per task,
-        so split epics (e.g. "homework tracking system") into concrete tasks.
+        Keep each issue **one concern, reviewable in about 5 minutes** (one small
+        pull request). The Copilot cloud agent's ~59-minute session is only a hard
+        ceiling, never the target — split epics (e.g. "homework tracking system")
+        into concrete, small tasks.
   - type: textarea
     id: summary
     attributes:

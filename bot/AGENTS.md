@@ -126,7 +126,7 @@ test/                        # node:test suites + test/mocks.js
   entangled — explain briefly which you chose.
 - **Only stage what you changed.** Leave unrelated modified/untracked files
   alone (e.g. in-progress `docs/*` plans). Show `git status -sb` after
-  committing. **Do not `git push`** unless explicitly asked.
+  committing.
 - Keep responses concise. Don't create docs/markdown to describe changes unless
   requested.
 

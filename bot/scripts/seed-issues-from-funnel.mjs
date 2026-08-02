@@ -53,7 +53,7 @@ for (const t of tasks) {
     `${t.text}\n\n` +
     `<!-- funnel-task: ${t.text} -->\n\n` +
     '### Acceptance criteria\n- [ ] TODO — fill in before adding `ready`/`agent-ok`\n- [ ] Lint, typecheck and tests pass\n\n' +
-    '### Scope\nKeep small enough for one PR (agent session cap is 59 min).';
+    '### Scope\nKeep it one concern, reviewable in ~5 minutes (the ~59-min agent session cap is only a hard ceiling, never the target).';
 
   if (!apply) {
     console.log(`• ${title}${t.crumbs.length ? `   (${t.crumbs.join(' › ')})` : ''}`);
