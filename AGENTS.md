@@ -21,6 +21,10 @@ conventions live.
   `agent-dispatch` workflow — keep it at the root.
 - Definition of done: the touched sub-project is lint-, typecheck- and
   test-clean.
+- **Git workflow:** never commit, push, or merge directly to `master`. Create
+  changes on a feature branch, push the branch, and open a pull request. Pushing
+  feature branches and opening PRs is fine without asking; only pushing to or
+  merging into `master` requires explicit approval — wait to be prompted.
 
 ## Feature funnel round-trip
 
@@ -48,3 +52,28 @@ previews matches, `--yes` writes them. Commit the funnel change yourself.
 
 So: closing an issue as **completed** checks its funnel item automatically.
 Closing as **not planned** leaves the funnel untouched.
+
+## Picking what to work on next
+
+When asked to "pick something to implement" (rather than given a specific
+issue), derive the target instead of guessing:
+
+1. **The backlog is the funnel + its issues.** `feature-ideas` holds the intent
+   (nested/ordered leaves); each open GitHub issue mirrors one leaf via its
+   `funnel-task` marker. `gh issue list --state open` (JSON, piped to `cat` to
+   avoid the pager) is the fastest way to see what's live.
+2. **Labels tell you readiness, not just topic.** `ready` + `agent-ok` = groomed
+   and buildable now; `needs-breakdown` = needs a plan first; `needs-triage` =
+   ungroomed (its acceptance criteria are still a `TODO` placeholder). Build a
+   `ready`+`agent-ok` issue straight away. **If none are `ready`+`agent-ok`, do
+   not silently groom or guess — stop and ask the maintainer which issue to groom
+   together**, then fill in real acceptance criteria and apply the labels with
+   them before writing code.
+3. **Respect dependency order within a feature.** The funnel nesting encodes
+   phases — pick the *foundational* leaf others consume (e.g. a config/data layer
+   before the module that aggregates it), not a leaf that depends on unbuilt
+   work. An issue's **Context** line shows its funnel path/phase; its **Scope**
+   line caps it to one concern reviewable in ~5 minutes (the ~59-min agent
+   session is only a hard ceiling, never the target).
+4. **Confirm the pick and its rationale** before implementing, and keep each
+   change to a single, PR-sized issue so the funnel-sync round-trip stays 1:1.
