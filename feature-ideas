@@ -55,17 +55,21 @@
   - goal: encourage consistency without shaming laggards; derive everything from
     data the bot already records so students do nothing extra.
   - data sources (already tracked, no new student input):
-    - `homework_submissions` → submitted / reviewed / resubmitted per member.
+    - `homework_submissions` → submitted per member (review/resubmit are
+      teacher-followup states, not rewarded).
     - `session_participants.attendance_status` (present/listening/excused/absent)
       joined with `sessions.session_type` → attendance across main / training /
-      recitation.
-    - `member_progress` (pages/verse) → recitation progress per member.
+      recitation (recitation is rewarded via attendance, not page counts).
+    - `member_progress` (pages/verse) → recitation progress for tracking, not scoring.
   - phase 1 — حسنات points (MVP):
-    - [ ] define a points config per action (homework submitted, homework
-      reviewed, resubmit-after-review bonus, attendance by status, recitation
-      pages) with higher weight for training + recitation (the slipping ones).
+    - [ ] define a points config (homework submitted, attendance by status
+      × session-type weight) with `main` weighted highest, then `training`, then
+      the recitation family. Ships as hardcoded `DEFAULT_POINTS`.
     - [ ] add a scoring module that aggregates points per member per course cycle
       from the existing tables (no schema change; pure read/aggregate).
+    - [ ] make the points config editable per class (teacher overrides stored on
+      `group_settings`, merged over `DEFAULT_POINTS`; add a /manage editor with
+      reset-to-default). Depends on the points config + scoring module.
     - [ ] surface a "المواظبة" section: warm, collective framing
       («الأكثر مواظبة هذا الأسبوع»), never shaming.
   - phase 2 — positive nudges (reuse `lib/pendingNudge.js`):
